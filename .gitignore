@@ -1,0 +1,55 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+*.so
+
+# --- 虚拟环境 / 环境变量 ---
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# --- 测试与工具缓存 ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- 日志 ---
+*.log
+
+# --- 打包产物 / 压缩包 ---
+*.tar
+*.tar.gz
+*.zip
+*.rar
+
+# --- 数据（大型数据集不上传，仅保留 smoke 小数据）---
+data/raw/
+data/extracted/
+data/processed/
+# 保留 data/smoke/ 供 CI 冒烟测试（含其 h5 与 raw 图）
+
+# --- 训练/评估产物（全部忽略，仅保留占位）---
+outputs/*
+!outputs/.gitkeep
+
+# --- 权重/二进制产物（忽略权重与大数据 h5，但保留 data/smoke 的 h5）---
+*.pt
+*.pth
+*.npz
+*.npy
+*.h5
+*.hdf5
+!data/smoke/mcf_smoke_64.h5
+
+# --- 其他 ---
+.DS_Store
+Thumbs.db

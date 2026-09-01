@@ -1,0 +1,46 @@
+seed: 7
+device: auto
+output_dir: outputs/smoke/baseline
+
+data:
+  hdf5: data/smoke/mcf_smoke_64.h5
+  domains: [digits, fashion]
+  size: 64
+  augmentation:
+    enabled: false
+
+loader:
+  batch_size: 8
+  num_workers: 0
+  drop_last: false
+
+model:
+  type: resunet
+  base_channels: 8
+  dropout: 0.0
+  predict_uncertainty: true
+
+loss:
+  phase_l1: 1.0
+  phase_nll: 0.02
+  gradient: 0.1
+  ssim: 0.1
+  pearson: 0.02
+
+training:
+  epochs: 1
+  amp: true
+  optimizer:
+    name: adamw
+    lr: 0.001
+  scheduler:
+    name: none
+  max_train_batches: 2
+  max_val_batches: 1
+  early_stopping_patience: 0
+
+evaluation:
+  split: test
+  mc_samples: 1
+  bootstrap_samples: 20
+  max_batches: 1

@@ -1,0 +1,40 @@
+# 第二阶段（可选）：用真实配对数据学习经验相位→散斑代理。
+seed: 42
+device: cuda
+output_dir: outputs/research/forward_twin_seed42
+
+data:
+  hdf5: data/processed/mcf_qpi_128.h5
+  domains: [digits, fashion]
+  size: 128
+  augmentation:
+    enabled: false
+
+loader:
+  batch_size: 32
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  drop_last: true
+
+model:
+  base_channels: 32
+  dropout: 0.05
+
+loss:
+  l1: 1.0
+  ssim: 0.20
+  spectral: 0.25
+
+training:
+  epochs: 80
+  amp: true
+  gradient_clip: 1.0
+  early_stopping_patience: 15
+  optimizer:
+    name: adamw
+    lr: 0.0002
+    weight_decay: 0.0001
+  scheduler:
+    name: cosine
+    min_lr: 0.000002

@@ -1,0 +1,59 @@
+# 原论文风格的强监督基线；用于公平比较，不是主创新模型。
+seed: 42
+device: cuda
+output_dir: outputs/research/baseline_resunet_seed42
+
+data:
+  hdf5: data/processed/mcf_qpi_128.h5
+  domains: [digits, fashion]
+  size: 128
+  augmentation:
+    enabled: true
+    gain: 0.10
+    background: 0.02
+    gaussian_noise: 0.01
+    poisson_peak: 0.0
+    blur_probability: 0.10
+    max_shift_pixels: 1
+    saturation_probability: 0.05
+    dead_pixel_probability: 0.0002
+
+loader:
+  batch_size: 64
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  drop_last: true
+
+model:
+  type: resunet
+  base_channels: 32
+  dropout: 0.10
+  predict_uncertainty: true
+
+loss:
+  phase_l1: 1.0
+  phase_nll: 0.05
+  gradient: 0.15
+  ssim: 0.20
+  pearson: 0.05
+
+training:
+  epochs: 60
+  amp: true
+  gradient_clip: 1.0
+  early_stopping_patience: 12
+  optimizer:
+    name: adamw
+    lr: 0.0002
+    weight_decay: 0.0001
+  scheduler:
+    name: cosine
+    min_lr: 0.000002
+
+evaluation:
+  split: test
+  mc_samples: 8
+  amp: true
+  bootstrap_samples: 2000
+  save_predictions: true

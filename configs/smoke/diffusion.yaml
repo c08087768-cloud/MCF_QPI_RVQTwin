@@ -1,0 +1,58 @@
+# 仅用于代码连通性检查，不用于论文结果。
+seed: 42
+device: auto
+output_dir: outputs/smoke/diffusion
+
+data:
+  hdf5: data/smoke/mcf_smoke_64.h5
+  domains: [digits, fashion]
+  size: 64
+  limit: 16
+  augmentation:
+    enabled: true
+    gaussian_noise: 0.01
+    gain: 0.05
+    background: 0.01
+    blur_probability: 0.0
+    max_shift_pixels: 0
+    saturation_probability: 0.0
+    dead_pixel_probability: 0.0
+
+loader:
+  batch_size: 2
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false
+  drop_last: true
+
+model:
+  base_channels: 8
+  time_dim: 32
+  dropout: 0.0
+  timesteps: 20
+  beta_start: 0.0001
+  beta_end: 0.02
+  loss_type: mse
+  sample_steps: 4
+  eta: 0.0
+
+training:
+  epochs: 1
+  amp: false
+  max_train_batches: 1
+  max_val_batches: 1
+  early_stopping_patience: 0
+  optimizer:
+    name: adam
+    lr: 0.0001
+    weight_decay: 0.0
+  scheduler:
+    name: none
+
+evaluation:
+  split: test
+  mc_samples: 1
+  amp: false
+  max_batches: 1
+  bootstrap_samples: 10
+  save_predictions: false

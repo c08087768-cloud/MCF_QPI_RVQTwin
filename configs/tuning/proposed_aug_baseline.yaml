@@ -1,0 +1,87 @@
+# 单变量实验：仅将 proposed 的传感器增强强度对齐 baseline。
+seed: 42
+device: cuda
+output_dir: outputs/tuning/proposed_aug_baseline_seed42
+
+data:
+  hdf5: data/processed/mcf_qpi_128.h5
+  domains: [digits, fashion]
+  size: 128
+  augmentation:
+    enabled: true
+    gain: 0.10
+    background: 0.02
+    gaussian_noise: 0.01
+    poisson_peak: 0.0
+    blur_probability: 0.10
+    max_shift_pixels: 1
+    saturation_probability: 0.05
+    dead_pixel_probability: 0.0002
+
+loader:
+  batch_size: 32
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  drop_last: true
+
+model:
+  type: dual_domain_rvq_twin
+  phase_prior_checkpoint: outputs/research/phase_rvqvae_seed42/best.pt
+  phase_prior_model:
+    latent_channels: 64
+    base_channels: 32
+    downsample_stages: 3
+    codebook_size: 256
+    num_quantizers: 2
+    commitment_beta: 0.25
+    dropout: 0.05
+  base_channels: 32
+  dropout: 0.10
+  residual_scale: 0.15
+  freeze_prior_encoder: true
+  freeze_codebook: true
+  freeze_decoder: false
+  use_spatial: true
+  use_frequency: true
+  use_quantization: true
+
+forward_twin:
+  enabled: true
+  checkpoint: outputs/research/forward_twin_seed42/best.pt
+  model:
+    base_channels: 32
+    dropout: 0.05
+
+loss:
+  phase_l1: 1.0
+  phase_nll: 0.05
+  gradient: 0.15
+  ssim: 0.20
+  pearson: 0.05
+  vq: 0.05
+  token: 0.15
+  latent: 0.10
+  residual: 0.01
+  cycle_l1: 0.05
+  cycle_spectral: 0.02
+
+training:
+  epochs: 80
+  amp: true
+  gradient_clip: 1.0
+  early_stopping_patience: 15
+  optimizer:
+    name: adamw
+    lr: 0.00015
+    weight_decay: 0.0001
+  scheduler:
+    name: cosine
+    min_lr: 0.000001
+
+evaluation:
+  split: test
+  mc_samples: 8
+  amp: true
+  bootstrap_samples: 2000
+  save_predictions: true

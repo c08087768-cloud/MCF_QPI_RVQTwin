@@ -1,0 +1,59 @@
+# 生成式基线：条件 DDPM 训练、DDIM 推理。
+# 该实现用于公平比较，不是 SpecDiffusion 官方网络的逐层复现。
+seed: 42
+device: cuda
+output_dir: outputs/research/diffusion_seed42
+
+data:
+  hdf5: data/processed/mcf_qpi_128.h5
+  domains: [digits, fashion]
+  size: 128
+  augmentation:
+    enabled: true
+    gain: 0.10
+    background: 0.02
+    gaussian_noise: 0.01
+    poisson_peak: 0.0
+    blur_probability: 0.10
+    max_shift_pixels: 1
+    saturation_probability: 0.05
+    dead_pixel_probability: 0.0002
+
+loader:
+  batch_size: 16
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  drop_last: true
+
+model:
+  base_channels: 32
+  time_dim: 128
+  dropout: 0.05
+  timesteps: 1000
+  beta_start: 0.0001
+  beta_end: 0.02
+  loss_type: mse
+  # 论文主表建议同时报告 25/50/100 步的速度—质量曲线。
+  sample_steps: 100
+  eta: 0.0
+
+training:
+  epochs: 200
+  amp: true
+  gradient_clip: 1.0
+  early_stopping_patience: 30
+  optimizer:
+    name: adamw
+    lr: 0.0001
+    weight_decay: 0.0001
+  scheduler:
+    name: cosine
+    min_lr: 0.000001
+
+evaluation:
+  split: test
+  mc_samples: 1
+  amp: true
+  bootstrap_samples: 2000
+  save_predictions: true

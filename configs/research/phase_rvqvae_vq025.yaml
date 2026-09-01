@@ -1,0 +1,50 @@
+# 阶段一单变量实验 B：仅将总损失中的 VQ 权重从 0.50 降到 0.25。
+seed: 42
+device: cuda
+deterministic: false
+output_dir: outputs/codebook_experiments/vq025_seed42
+
+data:
+  hdf5: data/processed/mcf_qpi_128.h5
+  domains: [digits, fashion]
+  size: 128
+  augmentation:
+    enabled: false
+
+loader:
+  batch_size: 64
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: true
+
+model:
+  latent_channels: 64
+  base_channels: 32
+  downsample_stages: 3
+  codebook_size: 256
+  num_quantizers: 2
+  commitment_beta: 0.25
+  dropout: 0.05
+
+loss:
+  l1: 1.0
+  gradient: 0.15
+  ssim: 0.20
+  vq: 0.25
+
+training:
+  epochs: 60
+  amp: true
+  amp_dtype: float16
+  gradient_clip: 1.0
+  early_stopping_patience: 12
+  optimizer:
+    name: adamw
+    lr: 0.0002
+    weight_decay: 0.0001
+  scheduler:
+    name: cosine
+    min_lr: 0.000002
+

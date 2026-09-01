@@ -1,0 +1,25 @@
+name: mcf-qpi-rvqtwin
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pytorch>=2.3
+  - torchvision>=0.18
+  - pytorch-cuda=12.1
+  - numpy
+  - scipy
+  - pillow
+  - h5py
+  - pandas
+  - pyyaml
+  - tqdm
+  - requests
+  - scikit-image
+  - matplotlib
+  - tensorboard
+  - pytest
+  - pip
+  - pip:
+      - -e .

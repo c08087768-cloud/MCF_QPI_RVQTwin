@@ -1,0 +1,74 @@
+seed: 7
+device: auto
+output_dir: outputs/smoke/proposed
+
+data:
+  hdf5: data/smoke/mcf_smoke_64.h5
+  domains: [digits, fashion]
+  size: 64
+  augmentation:
+    enabled: false
+
+loader:
+  batch_size: 8
+  num_workers: 0
+  drop_last: false
+
+model:
+  type: dual_domain_rvq_twin
+  phase_prior_checkpoint: outputs/smoke/phase_rvqvae/best.pt
+  phase_prior_model:
+    latent_channels: 16
+    base_channels: 8
+    downsample_stages: 3
+    codebook_size: 32
+    num_quantizers: 2
+    commitment_beta: 0.25
+    dropout: 0.0
+  base_channels: 8
+  dropout: 0.0
+  residual_scale: 0.15
+  freeze_prior_encoder: true
+  freeze_codebook: true
+  freeze_decoder: false
+  use_spatial: true
+  use_frequency: true
+  use_quantization: true
+
+forward_twin:
+  enabled: true
+  checkpoint: outputs/smoke/forward_twin/best.pt
+  model:
+    base_channels: 8
+    dropout: 0.0
+
+loss:
+  phase_l1: 1.0
+  phase_nll: 0.02
+  gradient: 0.1
+  ssim: 0.1
+  pearson: 0.02
+  vq: 0.02
+  token: 0.05
+  latent: 0.05
+  residual: 0.01
+  cycle_l1: 0.02
+  cycle_spectral: 0.01
+
+training:
+  epochs: 1
+  amp: true
+  optimizer:
+    name: adamw
+    lr: 0.001
+  scheduler:
+    name: none
+  max_train_batches: 2
+  max_val_batches: 1
+  early_stopping_patience: 0
+
+evaluation:
+  split: test
+  mc_samples: 2
+  bootstrap_samples: 20
+  max_batches: 1

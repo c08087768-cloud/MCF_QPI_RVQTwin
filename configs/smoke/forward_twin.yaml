@@ -1,0 +1,36 @@
+seed: 7
+device: auto
+output_dir: outputs/smoke/forward_twin
+
+data:
+  hdf5: data/smoke/mcf_smoke_64.h5
+  domains: [digits, fashion]
+  size: 64
+  augmentation:
+    enabled: false
+
+loader:
+  batch_size: 8
+  num_workers: 0
+  drop_last: false
+
+model:
+  base_channels: 8
+  dropout: 0.0
+
+loss:
+  l1: 1.0
+  ssim: 0.1
+  spectral: 0.1
+
+training:
+  epochs: 1
+  amp: true
+  optimizer:
+    name: adamw
+    lr: 0.001
+  scheduler:
+    name: none
+  max_train_batches: 2
+  max_val_batches: 1
+  early_stopping_patience: 0

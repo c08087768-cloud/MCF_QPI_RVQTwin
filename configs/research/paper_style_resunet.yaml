@@ -1,0 +1,65 @@
+# 尽可能接近 MCF-QPI 原论文公开方法描述的复现配置。
+# 原文没有公开每一层精确通道数，因此这里是“论文风格复现”，不是逐层官方代码复现。
+seed: 42
+device: cuda
+deterministic: false
+output_dir: outputs/research/paper_style_resunet_seed42
+
+data:
+  hdf5: data/processed/mcf_qpi_128.h5
+  domains: [digits, fashion]
+  size: 128
+  augmentation:
+    enabled: false
+
+loader:
+  batch_size: 64
+  num_workers: 8
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: true
+
+model:
+  type: resunet
+  base_channels: 32
+  dropout: 0.10
+  # 原文只报告相位回归，不含不确定度头。
+  predict_uncertainty: false
+
+loss:
+  # 原文明确使用 MAE；其他项全部关闭。
+  phase_l1: 1.0
+  phase_nll: 0.0
+  gradient: 0.0
+  ssim: 0.0
+  pearson: 0.0
+  vq: 0.0
+  token: 0.0
+  latent: 0.0
+  residual: 0.0
+  cycle_l1: 0.0
+  cycle_spectral: 0.0
+
+training:
+  epochs: 40
+  amp: true
+  gradient_clip: 1.0
+  early_stopping_patience: 0
+  optimizer:
+    name: adam
+    lr: 0.0001
+    weight_decay: 0.0
+  scheduler:
+    name: step
+    # 原论文：每 20,000 iterations 学习率减半。
+    step_size: 20000
+    gamma: 0.5
+    interval: step
+
+evaluation:
+  split: test
+  mc_samples: 1
+  amp: true
+  bootstrap_samples: 2000
+  save_predictions: true
