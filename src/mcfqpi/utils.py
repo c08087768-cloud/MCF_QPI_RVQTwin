@@ -3,7 +3,10 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import os
+import platform
 import random
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Iterator
@@ -20,11 +23,31 @@ def seed_everything(seed: int, deterministic: bool = False) -> None:
     torch.cuda.manual_seed_all(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
     if deterministic:
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+        torch.use_deterministic_algorithms(True)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
     else:
+        torch.use_deterministic_algorithms(False)
         # 图像尺寸固定时 benchmark 通常更快；论文复现实验可开启 deterministic。
         torch.backends.cudnn.benchmark = torch.cuda.is_available()
+
+
+def capture_rng_state() -> dict[str, Any]:
+    return {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch_cpu": torch.get_rng_state(),
+        "torch_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
+    }
+
+
+def restore_rng_state(state: dict[str, Any]) -> None:
+    random.setstate(state["python"])
+    np.random.set_state(state["numpy"])
+    torch.set_rng_state(state["torch_cpu"])
+    if torch.cuda.is_available() and state.get("torch_cuda"):
+        torch.cuda.set_rng_state_all(state["torch_cuda"])
 
 
 def select_device(name: str = "auto") -> torch.device:
@@ -86,6 +109,25 @@ def atomic_torch_save(obj: Any, path: str | Path) -> None:
     temporary.replace(path)
 
 
+def save_inference_checkpoint(
+    model: torch.nn.Module,
+    path: str | Path,
+    *,
+    model_config: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """保存无需 sidecar、可用 weights_only 安全读取的纯推理 checkpoint。"""
+    atomic_torch_save(
+        {
+            "schema_version": "mcfqpi-inference-1.0",
+            "model": model.state_dict(),
+            "model_config": model_config,
+            "metadata": metadata or {},
+        },
+        path,
+    )
+
+
 def load_checkpoint(path: str | Path, map_location: str | torch.device = "cpu") -> dict[str, Any]:
     checkpoint = torch.load(Path(path), map_location=map_location, weights_only=False)
     if not isinstance(checkpoint, dict):
@@ -95,6 +137,33 @@ def load_checkpoint(path: str | Path, map_location: str | torch.device = "cpu") 
 
 def count_trainable_parameters(model: torch.nn.Module) -> int:
     return sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+
+
+def build_reproducibility_metadata(full_config: dict[str, Any]) -> dict[str, Any]:
+    try:
+        git_sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        git_sha = "unknown"
+    data = full_config.get("data", {})
+    fingerprints = {}
+    for key in ("manifest", "hdf5"):
+        raw_path = data.get(key)
+        if raw_path and Path(raw_path).is_file():
+            fingerprints[key] = {"path": str(Path(raw_path).resolve()), "sha256": sha256_file(raw_path)}
+    return {
+        "git_sha": git_sha,
+        "data_fingerprints": fingerprints,
+        "environment": {
+            "python": sys.version,
+            "platform": platform.platform(),
+            "torch": torch.__version__,
+            "cuda_runtime": torch.version.cuda,
+            "cudnn": torch.backends.cudnn.version(),
+            "cuda_device_count": torch.cuda.device_count(),
+        },
+    }
 
 
 class AverageMeter:

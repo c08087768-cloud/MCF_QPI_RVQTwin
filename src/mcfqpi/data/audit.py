@@ -8,7 +8,13 @@ import pandas as pd
 from PIL import Image
 
 
-def audit_manifest(path: str | Path, *, inspect_dimensions: bool = True) -> dict[str, Any]:
+def audit_manifest(
+    path: str | Path,
+    *,
+    inspect_dimensions: bool = True,
+    expected_rows: int | None = None,
+    strict_protocol: bool = False,
+) -> dict[str, Any]:
     frame = pd.read_csv(path, dtype=str).fillna("")
     required = {"sample_id", "domain", "split", "speckle_path", "phase_path"}
     missing = sorted(required - set(frame.columns))
@@ -27,6 +33,10 @@ def audit_manifest(path: str | Path, *, inspect_dimensions: bool = True) -> dict
         "cross_split_perceptual_phase_duplicates": [],
         "dimension_counts": defaultdict(int),
         "pair_dimension_mismatches": [],
+        "unknown_domains": sorted(set(frame["domain"]) - {"digits", "fashion"}),
+        "unknown_splits": sorted(set(frame["split"]) - {"train", "val", "test"}),
+        "expected_rows": expected_rows,
+        "row_count_matches": expected_rows is None or len(frame) == expected_rows,
     }
     for column, output_key in [
         ("phase_sha256", "cross_split_exact_phase_duplicates"),
@@ -64,5 +74,9 @@ def audit_manifest(path: str | Path, *, inspect_dimensions: bool = True) -> dict
         report["missing_files"]
         or report["duplicate_sample_ids"]
         or report["cross_split_exact_phase_duplicates"]
+        or report["unknown_domains"]
+        or report["unknown_splits"]
+        or not report["row_count_matches"]
+        or (strict_protocol and report["cross_split_perceptual_phase_duplicates"])
     )
     return report

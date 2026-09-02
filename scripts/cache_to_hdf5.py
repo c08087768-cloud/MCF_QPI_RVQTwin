@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("manifest")
     parser.add_argument("--output", default="data/processed/mcf_qpi_128.h5")
     parser.add_argument("--size", type=int, default=128)
-    parser.add_argument("--phase-encoding", default="auto", choices=["auto", "uint8", "uint16", "normalized", "radian"])
+    parser.add_argument("--phase-encoding", required=True, choices=["uint8", "uint16", "normalized", "radian"])
     parser.add_argument("--resize-mode", default="fit_pad", choices=["stretch", "fit_pad", "center_crop"])
     parser.add_argument("--normalization", default="log_mean", choices=["log_mean", "robust_log", "linear_mean"])
     parser.add_argument("--dynamic-range", type=float, default=20.0)

@@ -32,7 +32,16 @@ except ModuleNotFoundError:  # 允许最小 smoke 环境不安装 tensorboard
             pass
 
 from ..config import save_json, save_yaml
-from ..utils import AverageMeter, atomic_torch_save, count_trainable_parameters, worker_seed_init
+from ..utils import (
+    AverageMeter,
+    atomic_torch_save,
+    capture_rng_state,
+    build_reproducibility_metadata,
+    count_trainable_parameters,
+    save_inference_checkpoint,
+    restore_rng_state,
+    worker_seed_init,
+)
 
 StepFunction = Callable[[nn.Module, dict[str, Any], bool], tuple[torch.Tensor, Mapping[str, torch.Tensor], dict[str, Any]]]
 
@@ -220,6 +229,8 @@ def fit_model(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     save_yaml(full_config, output_dir / "resolved_config.yaml")
+    reproducibility_metadata = build_reproducibility_metadata(full_config)
+    save_json(reproducibility_metadata, output_dir / "reproducibility.json")
     model.to(device)
     optimizer = build_optimizer(model, training_config.get("optimizer", {}))
     epochs = int(training_config.get("epochs", 40))
@@ -239,6 +250,8 @@ def fit_model(
     start_epoch = 1
     best_value = math.inf
     history: list[dict[str, float]] = []
+    no_improvement = 0
+    optimizer_updates = 0
     if resume_checkpoint:
         checkpoint = torch.load(resume_checkpoint, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint["model"])
@@ -250,14 +263,22 @@ def fit_model(
         start_epoch = int(checkpoint.get("epoch", 0)) + 1
         best_value = float(checkpoint.get("best_value", math.inf))
         history = list(checkpoint.get("history", []))
+        no_improvement = int(checkpoint.get("no_improvement", 0))
+        optimizer_updates = int(checkpoint.get("optimizer_updates", 0))
+        if checkpoint.get("rng_state") is not None:
+            restore_rng_state(checkpoint["rng_state"])
+        if checkpoint.get("train_loader_generator_state") is not None:
+            train_loader.generator.set_state(checkpoint["train_loader_generator_state"])
+        if checkpoint.get("val_loader_generator_state") is not None:
+            val_loader.generator.set_state(checkpoint["val_loader_generator_state"])
 
     writer = SummaryWriter(output_dir / "tensorboard")
     patience = int(training_config.get("early_stopping_patience", 15))
-    no_improvement = 0
     gradient_clip = float(training_config.get("gradient_clip", 1.0))
     accumulation_steps = max(1, int(training_config.get("accumulation_steps", 1)))
     max_train_batches = int(training_config.get("max_train_batches", 0))
     max_val_batches = int(training_config.get("max_val_batches", 0))
+    monitor = str(training_config.get("checkpoint_monitor", "val_loss"))
 
     print(f"可训练参数：{count_trainable_parameters(model):,}")
     print(f"设备：{device}；AMP：{amp_enabled} ({amp_dtype})")
@@ -312,28 +333,55 @@ def fit_model(
         record.update({f"train_{key}": value for key, value in train_terms.items()})
         record.update({f"val_{key}": value for key, value in val_terms.items()})
         history.append(record)
+        if monitor not in record:
+            raise KeyError(f"checkpoint_monitor={monitor} 不存在；可选项：{sorted(record)}")
+        monitored_value = float(record[monitor])
         for key, value in record.items():
             if key != "epoch":
                 writer.add_scalar(key, value, epoch)
         writer.flush()
 
+        improved = monitored_value < best_value
+        if improved:
+            best_value = monitored_value
+            no_improvement = 0
+        else:
+            no_improvement += 1
+        optimizer_updates += math.ceil(
+            (min(len(train_loader), max_train_batches) if max_train_batches > 0 else len(train_loader))
+            / accumulation_steps
+        )
         checkpoint = {
             "epoch": epoch,
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict(),
             "scheduler": scheduler.state_dict() if scheduler is not None else None,
             "scaler": scaler.state_dict() if scaler is not None else None,
-            "best_value": min(best_value, val_loss),
+            "best_value": best_value,
+            "checkpoint_monitor": monitor,
+            "no_improvement": no_improvement,
+            "optimizer_updates": optimizer_updates,
+            "rng_state": capture_rng_state(),
+            "train_loader_generator_state": train_loader.generator.get_state(),
+            "val_loader_generator_state": val_loader.generator.get_state(),
             "history": history,
             "config": full_config,
+            "reproducibility": reproducibility_metadata,
         }
         atomic_torch_save(checkpoint, output_dir / "last.pt")
-        if val_loss < best_value:
-            best_value = val_loss
-            no_improvement = 0
+        if improved:
             atomic_torch_save(checkpoint, output_dir / "best.pt")
-        else:
-            no_improvement += 1
+            save_inference_checkpoint(
+                model,
+                output_dir / "best.inference.pt",
+                model_config=full_config.get("model", {}),
+                metadata={
+                    "epoch": epoch,
+                    "best_value": monitored_value,
+                    "checkpoint_monitor": monitor,
+                    **reproducibility_metadata,
+                },
+            )
 
         print(
             f"Epoch {epoch:03d}/{epochs} | train={train_loss:.6f} | "
@@ -352,6 +400,7 @@ def fit_model(
         "elapsed_seconds": elapsed,
         "trainable_parameters": count_trainable_parameters(model),
         "best_checkpoint": str((output_dir / "best.pt").resolve()),
+        "best_inference_checkpoint": str((output_dir / "best.inference.pt").resolve()),
         "last_checkpoint": str((output_dir / "last.pt").resolve()),
     }
     save_json(result, output_dir / "training_summary.json")

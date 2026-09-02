@@ -9,7 +9,11 @@ from pathlib import Path
 import pandas as pd
 
 from mcfqpi.data.pairing import PairRecord
-from mcfqpi.data.split import assign_group_splits
+from mcfqpi.data.split import (
+    assign_group_splits,
+    build_strict_group_ids,
+    validate_manual_duplicate_review,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -19,6 +23,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-ratio", type=float, default=0.88)
     parser.add_argument("--val-ratio", type=float, default=0.10)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--review", required=True, help="人工核查 CSV")
+    parser.add_argument("--minimum-review-per-stratum", type=int, default=100)
     return parser.parse_args()
 
 
@@ -29,12 +35,17 @@ def main() -> None:
         raise RuntimeError(
             "严格重新划分要求每行都有 phase_sha256。请重新运行 build_manifest.py --compute-hashes。"
         )
+    review = pd.read_csv(args.review, dtype=str).fillna("")
+    validate_manual_duplicate_review(
+        review, minimum_per_stratum=args.minimum_review_per_stratum
+    )
+    strict_groups = build_strict_group_ids(frame, review)
     allowed = {field.name for field in fields(PairRecord)}
     records = []
     for row in frame.to_dict(orient="records"):
         payload = {key: str(value) for key, value in row.items() if key in allowed}
         payload["split"] = "unknown"
-        payload["group_id"] = payload.get("phase_sha256", "") or payload.get("phase_phash", "")
+        payload["group_id"] = strict_groups[str(row["sample_id"])]
         records.append(PairRecord(**payload))
     records = assign_group_splits(
         records,

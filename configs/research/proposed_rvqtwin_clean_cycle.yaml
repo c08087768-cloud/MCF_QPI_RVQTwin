@@ -1,10 +1,16 @@
 # 主模型：双域散斑编码 + Residual VQ 相位先验 + 经验闭环 + 不确定度。
 seed: 42
 device: cuda
+reproducibility:
+  mode: strict
 output_dir: outputs/research_corrected/proposed_clean_cycle_seed42
 
 data:
-  hdf5: data/processed/mcf_qpi_128.h5
+  hdf5: data/processed/official/mcf_qpi_128_v2.h5
+  phase_encoding: uint8
+  resize_mode: fit_pad
+  speckle_normalization: log_mean
+  dynamic_range: 20.0
   domains: [digits, fashion]
   size: 128
   augmentation:
@@ -27,7 +33,7 @@ loader:
 
 model:
   type: dual_domain_rvq_twin
-  phase_prior_checkpoint: outputs/research/phase_rvqvae_seed42/best.pt
+  phase_prior_checkpoint: outputs/research_corrected/official/phase_rvqvae_seed42/best.pt
   phase_prior_model:
     latent_channels: 64
     base_channels: 32
@@ -71,7 +77,8 @@ training:
   epochs: 80
   amp: true
   gradient_clip: 1.0
-  early_stopping_patience: 15
+  early_stopping_patience: 0
+  checkpoint_monitor: val_phase_l1
   optimizer:
     name: adamw
     lr: 0.00015

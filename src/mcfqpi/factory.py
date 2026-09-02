@@ -95,6 +95,23 @@ def build_diffusion_reconstructor(config: dict[str, Any]) -> DiffusionPhaseRecon
 
 
 def build_inverse_model(config: dict[str, Any], *, map_location: str | torch.device = "cpu") -> nn.Module:
+    model = build_inverse_architecture(config)
+    if isinstance(model, DualDomainRVQTwin):
+        checkpoint = config.get("phase_prior_checkpoint")
+        if not checkpoint:
+            raise ValueError("新训练主模型需要 model.phase_prior_checkpoint")
+        prior = load_phase_prior(
+            checkpoint,
+            model_config=config.get("phase_prior_model"),
+            map_location=map_location,
+            strict=True,
+        )
+        model.phase_prior.load_state_dict(prior.state_dict(), strict=True)
+    return model
+
+
+def build_inverse_architecture(config: dict[str, Any]) -> nn.Module:
+    """只按配置构建架构，不读取任何初始化权重。"""
     model_type = str(config.get("type", "resunet")).lower()
     if model_type in {"resunet", "baseline", "unet"}:
         return ResUNetPhase(
@@ -104,15 +121,7 @@ def build_inverse_model(config: dict[str, Any], *, map_location: str | torch.dev
             predict_uncertainty=bool(config.get("predict_uncertainty", True)),
         )
     if model_type in {"dual_domain_rvq_twin", "rvqtwin", "proposed"}:
-        checkpoint = config.get("phase_prior_checkpoint")
-        if not checkpoint:
-            raise ValueError("主模型需要 model.phase_prior_checkpoint")
-        prior = load_phase_prior(
-            checkpoint,
-            model_config=config.get("phase_prior_model"),
-            map_location=map_location,
-            strict=True,
-        )
+        prior = build_phase_prior(config.get("phase_prior_model", {}))
         return DualDomainRVQTwin(
             prior,
             base_channels=int(config.get("base_channels", 32)),
@@ -126,6 +135,20 @@ def build_inverse_model(config: dict[str, Any], *, map_location: str | torch.dev
             use_quantization=bool(config.get("use_quantization", True)),
         )
     raise ValueError(f"未知 model.type：{model_type}")
+
+
+def build_inverse_from_checkpoint(
+    checkpoint_path: str | Path,
+    *,
+    map_location: str | torch.device = "cpu",
+) -> tuple[nn.Module, dict[str, Any]]:
+    """从自包含纯推理 checkpoint 构建架构并严格加载权重。"""
+    checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
+    if not isinstance(checkpoint, dict) or "model_config" not in checkpoint:
+        raise ValueError("不是自包含 MCF-QPI 推理 checkpoint")
+    model = build_inverse_architecture(checkpoint["model_config"])
+    model.load_state_dict(_model_state(checkpoint), strict=True)
+    return model, checkpoint
 
 
 def load_model_weights(

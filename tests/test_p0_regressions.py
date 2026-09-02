@@ -7,7 +7,11 @@ from torch.optim import SGD
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 
-from mcfqpi.evaluation.runner import combine_predictive_uncertainty, laplace_mixture_nll
+from mcfqpi.evaluation.runner import (
+    combine_predictive_uncertainty,
+    fit_laplace_temperature,
+    laplace_mixture_nll,
+)
 from mcfqpi.models.rvq import ResidualVectorQuantizer
 from mcfqpi.training.engine import _run_epoch
 from mcfqpi.training.losses import InverseLoss, LossWeights
@@ -95,6 +99,19 @@ def test_laplace_mixture_nll_has_correct_density_units() -> None:
     nll = laplace_mixture_nll(phases, scales, target)
 
     assert nll.item() == pytest.approx(torch.log(torch.tensor(2.0)).item())
+
+
+def test_temperature_calibration_reduces_nll() -> None:
+    target = torch.ones(1, 1, 2, 2)
+    phases = torch.zeros(1, 1, 1, 2, 2)
+    scales = torch.full_like(phases, 0.05)
+    before = laplace_mixture_nll(phases, scales, target).mean()
+
+    temperature = fit_laplace_temperature([(phases, scales, target, None)])
+    after = laplace_mixture_nll(phases, scales * temperature, target).mean()
+
+    assert temperature > 1.0
+    assert after < before
 
 
 class _ScalarModel(nn.Module):

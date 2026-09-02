@@ -24,21 +24,19 @@ def _changed_leaf_values(base: dict, candidate: dict, prefix: str = "") -> dict[
     return changed
 
 
-def test_tuned_config_changes_only_augmentation_and_output_dir() -> None:
+def test_legacy_tuned_config_records_baseline_augmentation_change() -> None:
     base = load_yaml(BASE_CONFIG)
     candidate = load_yaml(TUNED_CONFIG)
-    assert _changed_leaf_values(base, candidate) == {
+    changed = _changed_leaf_values(base, candidate)
+    assert {key: changed[key] for key in changed if key.startswith("data.augmentation.")} == {
         "data.augmentation.background": (0.03, 0.02),
         "data.augmentation.blur_probability": (0.15, 0.10),
         "data.augmentation.dead_pixel_probability": (0.0005, 0.0002),
         "data.augmentation.gain": (0.15, 0.10),
         "data.augmentation.gaussian_noise": (0.015, 0.01),
         "data.augmentation.saturation_probability": (0.08, 0.05),
-        "output_dir": (
-            "outputs/research/proposed_rvqtwin_seed42",
-            "outputs/tuning/proposed_aug_baseline_seed42",
-        ),
     }
+    assert candidate["output_dir"] == "outputs/tuning/proposed_aug_baseline_seed42"
 
 
 def test_runner_trains_seed42_and_evaluates_validation_only() -> None:

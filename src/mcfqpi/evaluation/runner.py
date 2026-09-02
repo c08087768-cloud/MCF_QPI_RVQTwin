@@ -13,7 +13,12 @@ from torch.utils.data import DataLoader
 
 from ..config import save_json
 from ..training.engine import move_batch_to_device
-from .metrics import phase_metrics_batch, risk_coverage_curve, summarize_frame
+from .metrics import (
+    expected_calibration_error,
+    phase_metrics_batch,
+    risk_coverage_curve,
+    summarize_frame,
+)
 from .visualization import save_phase_comparison
 
 
@@ -70,6 +75,35 @@ def laplace_mixture_nll(
     return torch.stack(losses)
 
 
+def fit_laplace_temperature(
+    validation_batches: list[
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]
+    ],
+) -> float:
+    """仅用 validation 的 MC 预测拟合一个正标量 scale 温度。"""
+    if not validation_batches:
+        raise ValueError("温度校准至少需要一个 validation batch")
+    device = validation_batches[0][0].device
+    log_temperature = torch.zeros((), device=device, requires_grad=True)
+    optimizer = torch.optim.LBFGS(
+        [log_temperature], lr=0.5, max_iter=50, line_search_fn="strong_wolfe"
+    )
+
+    def closure() -> torch.Tensor:
+        optimizer.zero_grad()
+        temperature = log_temperature.clamp(-6.0, 6.0).exp()
+        losses = [
+            laplace_mixture_nll(phases, scales * temperature, target, mask).mean()
+            for phases, scales, target, mask in validation_batches
+        ]
+        loss = torch.stack(losses).mean()
+        loss.backward()
+        return loss
+
+    optimizer.step(closure)
+    return float(log_temperature.detach().clamp(-6.0, 6.0).exp().cpu())
+
+
 def _enable_mc_dropout(model: nn.Module) -> None:
     """模型整体保持 eval，仅将 Dropout 层切回 train 以进行 MC Dropout。"""
     model.eval()
@@ -96,7 +130,10 @@ def evaluate_phase_model(
     max_batches: int = 0,
     bootstrap_samples: int = 2000,
     save_predictions: bool = False,
+    uncertainty_temperature: float = 1.0,
 ) -> dict[str, Any]:
+    if uncertainty_temperature <= 0:
+        raise ValueError("uncertainty_temperature 必须为正数")
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     model.to(device)
@@ -137,9 +174,14 @@ def evaluate_phase_model(
 
         phase_stack = torch.stack(phase_samples, dim=0)
         prediction = phase_stack.mean(dim=0)
+        scale_stack = (
+            torch.stack(scale_samples, dim=0) * uncertainty_temperature
+            if scale_samples
+            else None
+        )
         uncertainty_normalized = combine_predictive_uncertainty(
             phase_stack,
-            torch.stack(scale_samples, dim=0) if scale_samples else None,
+            scale_stack,
         )
         metric_rows = phase_metrics_batch(
             prediction,
@@ -154,6 +196,13 @@ def evaluate_phase_model(
         splits = list(raw_batch["split"])
         classes = list(raw_batch.get("class_id", [""] * batch_size))
         per_sample_ms = elapsed * 1000.0 / max(batch_size * max(1, mc_samples), 1)
+        mixture_nll = (
+            laplace_mixture_nll(
+                phase_stack, scale_stack, batch["phase"], batch.get("valid_mask")
+            )
+            if scale_stack is not None
+            else None
+        )
         for index, metrics in enumerate(metric_rows):
             metrics.update(
                 {
@@ -164,6 +213,20 @@ def evaluate_phase_model(
                     "inference_ms_per_forward": per_sample_ms,
                 }
             )
+            if mixture_nll is not None:
+                metrics["mixture_nll_normalized"] = float(mixture_nll[index].cpu())
+            if uncertainty_normalized is not None:
+                valid = (
+                    batch["valid_mask"][index] > 0.5
+                    if "valid_mask" in batch
+                    else torch.ones_like(batch["phase"][index], dtype=torch.bool)
+                )
+                error = (prediction[index] - batch["phase"][index]).abs()
+                std = uncertainty_normalized[index].clamp_min(1e-12)
+                for label, multiplier in (("68", 1.0), ("90", 1.645), ("95", 1.96)):
+                    metrics[f"coverage_{label}"] = float(
+                        (error[valid] <= multiplier * std[valid]).float().mean().cpu()
+                    )
             rows.append(metrics)
 
         if not first_visualized:
@@ -197,9 +260,18 @@ def evaluate_phase_model(
         for domain, group in frame.groupby("domain")
     }
     risk_coverage = []
+    uncertainty_summary: dict[str, float] = {}
     if "uncertainty_mean" in frame:
         risk_coverage = risk_coverage_curve(frame)
         pd.DataFrame(risk_coverage).to_csv(output_dir / "risk_coverage.csv", index=False)
+        uncertainty_summary = {
+            "error_uncertainty_spearman": float(
+                frame[["mae_rad", "uncertainty_mean"]].corr(method="spearman").iloc[0, 1]
+            ),
+            "ece_rad": expected_calibration_error(
+                frame["mae_rad"].to_numpy(), frame["uncertainty_mean"].to_numpy()
+            ),
+        }
     summary = {
         "samples": int(len(frame)),
         "overall": overall,
@@ -208,6 +280,8 @@ def evaluate_phase_model(
         "wall_seconds": elapsed_total,
         "mean_forward_ms_per_sample": elapsed_total * 1000.0 / max(sample_total * max(1, mc_samples), 1),
         "risk_coverage": risk_coverage,
+        "uncertainty_temperature": float(uncertainty_temperature),
+        "uncertainty": uncertainty_summary,
     }
     save_json(summary, output_dir / "summary.json")
     if save_predictions:

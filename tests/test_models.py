@@ -97,3 +97,13 @@ def test_dual_domain_branch_and_quantization_ablations() -> None:
     assert output_continuous["phase"].shape == phase.shape
     assert "token_logits" not in output_continuous
     assert "target_indices" not in output_continuous
+
+
+def test_rvq_token_interventions_change_discrete_latent() -> None:
+    model = DualDomainRVQTwin(_prior(), base_channels=8, dropout=0.0)
+    speckle = torch.rand(2, 1, 64, 64)
+    plain = model(speckle)
+    shuffled = model(speckle, token_intervention="shuffle")
+    replaced = model(speckle, token_intervention="mean")
+    assert not torch.equal(plain["z_q"], shuffled["z_q"])
+    assert replaced["z_q"].std(dim=(-2, -1)).max() == 0

@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from ..utils import sha256_file, sha256_text
 from .dataset import MCFManifestDataset
 
 
@@ -29,6 +30,8 @@ def cache_manifest_to_hdf5(
     缓存中保存的是已经完成 resize/normalization 的 float32 张量；训练阶段的随机
     传感器增强仍在 Dataset 中在线执行。这样可以避免每个 epoch 重复解码数万张图。
     """
+    if phase_encoding == "auto":
+        raise ValueError("HDF5 v2 要求显式 phase_encoding，不能使用 auto")
     output = Path(output)
     if output.exists() and not overwrite:
         raise FileExistsError(f"输出已存在：{output}；如需覆盖请使用 --overwrite")
@@ -44,6 +47,14 @@ def cache_manifest_to_hdf5(
         dynamic_range=dynamic_range,
         augment=None,
     )
+    source_hashes: list[str] = []
+    for row in dataset.frame.itertuples(index=False):
+        for hash_key, path_key in (
+            ("speckle_sha256", "speckle_path"), ("phase_sha256", "phase_path")
+        ):
+            value = str(getattr(row, hash_key, ""))
+            source_hashes.append(value or sha256_file(getattr(row, path_key)))
+    source_data_sha256 = sha256_text("\n".join(sorted(source_hashes)))
     string_dtype = h5py.string_dtype("utf-8")
     temporary = output.with_suffix(output.suffix + ".tmp")
     if temporary.exists():
@@ -75,11 +86,13 @@ def cache_manifest_to_hdf5(
         file.attrs["manifest"] = str(Path(manifest).resolve())
         file.attrs["size"] = int(size)
         file.attrs["phase_range_rad"] = "[0, pi]"
-        file.attrs["phase_encoding_requested"] = phase_encoding
+        file.attrs["phase_encoding"] = phase_encoding
         file.attrs["resize_mode"] = resize_mode
         file.attrs["speckle_normalization"] = speckle_normalization
         file.attrs["dynamic_range"] = float(dynamic_range)
-        file.attrs["schema_version"] = "1.0"
+        file.attrs["manifest_sha256"] = sha256_file(manifest)
+        file.attrs["source_data_sha256"] = source_data_sha256
+        file.attrs["schema_version"] = "2.0"
         file.flush()
     temporary.replace(output)
     return output

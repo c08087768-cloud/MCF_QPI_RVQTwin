@@ -164,6 +164,7 @@ class DualDomainRVQTwin(nn.Module):
         speckle: torch.Tensor,
         *,
         target_phase: torch.Tensor | None = None,
+        token_intervention: str | None = None,
     ) -> dict[str, torch.Tensor | list[torch.Tensor]]:
         encoded = self.speckle_encoder(speckle)
         z_e = encoded["latent"]
@@ -173,6 +174,12 @@ class DualDomainRVQTwin(nn.Module):
             quantized = self.phase_prior.quantizer(z_e)
             z_q = quantized["quantized"]
             assert isinstance(z_q, torch.Tensor)
+            if token_intervention == "shuffle":
+                z_q = torch.flip(z_q, dims=(-2, -1))
+            elif token_intervention == "mean":
+                z_q = z_q.mean(dim=(-2, -1), keepdim=True).expand_as(z_q)
+            elif token_intervention not in {None, "none"}:
+                raise ValueError(f"未知 token_intervention：{token_intervention}")
             latent = z_q + continuous
             output = {
                 "indices": quantized["indices"],

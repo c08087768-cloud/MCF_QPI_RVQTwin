@@ -24,12 +24,16 @@ def main() -> None:
     args = parse_args()
     config = load_config(args.config, args.set)
     seed = int(config.get("seed", 42))
-    seed_everything(seed, deterministic=bool(config.get("deterministic", False)))
+    strict_repro = str(config.get("reproducibility", {}).get("mode", "fast")) == "strict"
+    seed_everything(seed, deterministic=strict_repro or bool(config.get("deterministic", False)))
     device = select_device(str(config.get("device", "auto")))
     train_dataset = build_dataset(config["data"], "train", training=True)
     val_dataset = build_dataset(config["data"], "val", training=False)
-    train_loader = build_loader(train_dataset, config.get("loader", {}), training=True, generator_seed=seed)
-    val_loader = build_loader(val_dataset, config.get("loader", {}), training=False, generator_seed=seed + 1)
+    loader_config = dict(config.get("loader", {}))
+    if strict_repro:
+        loader_config.update({"num_workers": 0, "persistent_workers": False})
+    train_loader = build_loader(train_dataset, loader_config, training=True, generator_seed=seed)
+    val_loader = build_loader(val_dataset, loader_config, training=False, generator_seed=seed + 1)
     model = build_inverse_model(config.get("model", {}), map_location="cpu")
     criterion = InverseLoss(LossWeights.from_dict(config.get("loss", {})))
 

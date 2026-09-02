@@ -103,10 +103,20 @@ class MCFH5Dataset(Dataset[dict[str, Any]]):
         domains: Iterable[str] | None = None,
         augment: SpeckleAugment | None = None,
         limit: int = 0,
+        expected_metadata: dict[str, Any] | None = None,
+        allow_metadata_mismatch: bool = False,
     ) -> None:
         self.path = str(Path(path))
         self._file: h5py.File | None = None
         with h5py.File(self.path, "r") as file:
+            expected = {"schema_version": "2.0", **(expected_metadata or {})}
+            mismatches = {
+                key: {"expected": value, "actual": file.attrs.get(key)}
+                for key, value in expected.items()
+                if str(file.attrs.get(key)) != str(value)
+            }
+            if mismatches and not allow_metadata_mismatch:
+                raise ValueError(f"HDF5 元数据不一致：{json.dumps(mismatches, ensure_ascii=False, default=str)}")
             def decode_array(name: str) -> np.ndarray:
                 values = np.asarray(file[name])
                 return np.asarray([value.decode("utf-8") if isinstance(value, bytes) else str(value) for value in values])
@@ -177,7 +187,20 @@ def build_dataset(config: dict[str, Any], split: str, *, training: bool) -> Data
         "limit": int(config.get("limit", 0)),
     }
     if config.get("hdf5"):
-        return MCFH5Dataset(config["hdf5"], **common)
+        expected_metadata = {
+            key: config[key]
+            for key in (
+                "size", "phase_encoding", "resize_mode",
+                "speckle_normalization", "dynamic_range", "manifest_sha256",
+            )
+            if key in config
+        }
+        return MCFH5Dataset(
+            config["hdf5"],
+            expected_metadata=expected_metadata,
+            allow_metadata_mismatch=bool(config.get("allow_hdf5_metadata_mismatch", False)),
+            **common,
+        )
     return MCFManifestDataset(
         config["manifest"],
         size=int(config.get("size", 128)),
