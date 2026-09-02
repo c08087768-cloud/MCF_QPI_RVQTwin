@@ -17,6 +17,59 @@ from .metrics import phase_metrics_batch, risk_coverage_curve, summarize_frame
 from .visualization import save_phase_comparison
 
 
+def combine_predictive_uncertainty(
+    phase_samples: torch.Tensor,
+    scale_samples: torch.Tensor | None,
+) -> torch.Tensor | None:
+    """返回归一化相位标准差；Laplace(scale=b) 的方差为 2b²。"""
+    if phase_samples.ndim < 2:
+        raise ValueError("phase_samples 必须以 MC sample 为第一维")
+    has_epistemic = phase_samples.shape[0] > 1
+    if scale_samples is None and not has_epistemic:
+        return None
+    epistemic_var = (
+        phase_samples.var(dim=0, unbiased=False)
+        if has_epistemic
+        else torch.zeros_like(phase_samples[0])
+    )
+    aleatoric_var = (
+        2.0 * scale_samples.square().mean(dim=0)
+        if scale_samples is not None
+        else torch.zeros_like(epistemic_var)
+    )
+    return torch.sqrt((epistemic_var + aleatoric_var).clamp_min(0.0))
+
+
+def laplace_mixture_nll(
+    phase_samples: torch.Tensor,
+    scale_samples: torch.Tensor,
+    target: torch.Tensor,
+    mask: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """计算逐样本 MC-Laplace 混合负对数似然（归一化相位单位）。"""
+    if phase_samples.shape != scale_samples.shape:
+        raise ValueError("phase_samples 与 scale_samples 的形状必须一致")
+    if phase_samples.ndim != target.ndim + 1 or phase_samples.shape[1:] != target.shape:
+        raise ValueError("MC 样本形状必须为 [M, *target.shape]")
+    scale = scale_samples.clamp_min(torch.finfo(scale_samples.dtype).eps)
+    log_probability = -(
+        (target.unsqueeze(0) - phase_samples).abs() / scale
+        + torch.log(2.0 * scale)
+    )
+    mixture_log_probability = torch.logsumexp(log_probability, dim=0) - np.log(
+        phase_samples.shape[0]
+    )
+    if mask is None:
+        mask = torch.ones_like(target)
+    valid = mask.to(dtype=torch.bool).expand_as(target)
+    losses: list[torch.Tensor] = []
+    for index in range(target.shape[0]):
+        if not valid[index].any():
+            raise ValueError("mask 中存在没有有效像素的样本")
+        losses.append(-mixture_log_probability[index][valid[index]].mean())
+    return torch.stack(losses)
+
+
 def _enable_mc_dropout(model: nn.Module) -> None:
     """模型整体保持 eval，仅将 Dropout 层切回 train 以进行 MC Dropout。"""
     model.eval()
@@ -84,17 +137,17 @@ def evaluate_phase_model(
 
         phase_stack = torch.stack(phase_samples, dim=0)
         prediction = phase_stack.mean(dim=0)
-        epistemic = phase_stack.std(dim=0, unbiased=False) if mc_samples > 1 else torch.zeros_like(prediction)
-        if scale_samples:
-            aleatoric = torch.stack(scale_samples, dim=0).mean(dim=0)
-        else:
-            aleatoric = torch.zeros_like(prediction)
-        uncertainty_normalized = torch.sqrt(epistemic.square() + aleatoric.square())
+        uncertainty_normalized = combine_predictive_uncertainty(
+            phase_stack,
+            torch.stack(scale_samples, dim=0) if scale_samples else None,
+        )
         metric_rows = phase_metrics_batch(
             prediction,
             batch["phase"],
             batch.get("valid_mask"),
-            uncertainty=uncertainty_normalized * torch.pi,
+            uncertainty=(uncertainty_normalized * torch.pi)
+            if uncertainty_normalized is not None
+            else None,
         )
         ids = list(raw_batch["sample_id"])
         domains = list(raw_batch["domain"])
@@ -119,7 +172,9 @@ def evaluate_phase_model(
                 batch["phase"].cpu(),
                 prediction.cpu(),
                 output_dir / "qualitative_examples.png",
-                uncertainty=(uncertainty_normalized * torch.pi).cpu(),
+                uncertainty_rad=(uncertainty_normalized * torch.pi).cpu()
+                if uncertainty_normalized is not None
+                else None,
             )
             first_visualized = True
         if save_predictions:

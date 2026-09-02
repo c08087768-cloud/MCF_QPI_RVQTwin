@@ -97,7 +97,6 @@ class ResidualVectorQuantizer(nn.Module):
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor | list[torch.Tensor]]:
         residual = x
-        quantized_sum = torch.zeros_like(x)
         raw_sum = torch.zeros_like(x)
         losses: list[torch.Tensor] = []
         indices: list[torch.Tensor] = []
@@ -105,7 +104,6 @@ class ResidualVectorQuantizer(nn.Module):
         perplexities: list[torch.Tensor] = []
         for quantizer in self.quantizers:
             output = quantizer(residual)
-            quantized_sum = quantized_sum + output.quantized
             raw_sum = raw_sum + output.raw_quantized
             # 下一层只看未被前面码本解释的残差；detach 避免残差路径重复更新旧码本。
             residual = residual - output.raw_quantized.detach()
@@ -114,9 +112,9 @@ class ResidualVectorQuantizer(nn.Module):
             logits.append(output.logits)
             perplexities.append(output.perplexity)
         return {
-            "quantized": quantized_sum,
+            "quantized": x + (raw_sum - x).detach(),
             "raw_quantized": raw_sum,
-            "loss": torch.stack(losses).sum(),
+            "loss": torch.stack(losses).mean(),
             "indices": torch.stack(indices, dim=1),  # [B,Q,H,W]
             "logits": logits,
             "perplexity": torch.stack(perplexities),

@@ -13,14 +13,14 @@ def save_phase_comparison(
     prediction: torch.Tensor,
     path: str | Path,
     *,
-    uncertainty: torch.Tensor | None = None,
+    uncertainty_rad: torch.Tensor | None = None,
     max_items: int = 6,
 ) -> Path:
     """保存散斑、真值、预测、误差和可选不确定度图。"""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     count = min(max_items, speckle.shape[0])
-    columns = 5 if uncertainty is not None else 4
+    columns = 5 if uncertainty_rad is not None else 4
     figure, axes = plt.subplots(count, columns, figsize=(3.2 * columns, 3.0 * count), squeeze=False)
     for row in range(count):
         s = speckle[row, 0].detach().cpu().numpy()
@@ -33,9 +33,9 @@ def save_phase_comparison(
             (p, "Predicted phase / rad", (0, np.pi)),
             (error, "Absolute error / rad", None),
         ]
-        if uncertainty is not None:
-            u = uncertainty[row, 0].detach().cpu().numpy() * np.pi
-            entries.append((u, "Predicted scale / rad", None))
+        if uncertainty_rad is not None:
+            u = uncertainty_rad[row, 0].detach().cpu().numpy()
+            entries.append((u, "Predictive std / rad", None))
         for column, (image, title, limits) in enumerate(entries):
             kwargs = {}
             if limits is not None:

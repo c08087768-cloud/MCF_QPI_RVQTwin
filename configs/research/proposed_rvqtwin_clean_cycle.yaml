@@ -1,7 +1,7 @@
 # 主模型：双域散斑编码 + Residual VQ 相位先验 + 经验闭环 + 不确定度。
 seed: 42
 device: cuda
-output_dir: outputs/research_corrected/proposed_cycle_off_seed42
+output_dir: outputs/research_corrected/proposed_clean_cycle_seed42
 
 data:
   hdf5: data/processed/mcf_qpi_128.h5
@@ -48,7 +48,7 @@ model:
 
 forward_twin:
   # 若 forward twin 的独立验证质量较差，应设为 false，并把 cycle 权重设为 0。
-  enabled: false
+  enabled: true
   checkpoint: outputs/research/forward_twin_seed42/best.pt
   model:
     base_channels: 32
@@ -64,8 +64,8 @@ loss:
   token: 0.15
   latent: 0.10
   residual: 0.01
-  cycle_l1: 0.0
-  cycle_spectral: 0.0
+  cycle_l1: 0.05
+  cycle_spectral: 0.02
 
 training:
   epochs: 80

@@ -143,13 +143,20 @@ def _run_epoch(
     if training:
         optimizer.zero_grad(set_to_none=True)
 
+    total_batches = len(loader)
+    num_batches = min(total_batches, max_batches) if max_batches > 0 else total_batches
+    if num_batches <= 0:
+        raise ValueError("DataLoader 为空或 max_batches 未允许处理任何 batch")
+
     for batch_index, raw_batch in enumerate(loader):
         if max_batches > 0 and batch_index >= max_batches:
             break
         batch = move_batch_to_device(raw_batch, device)
         with torch.set_grad_enabled(training), _autocast_context(device, amp_enabled, amp_dtype):
             loss, terms, outputs = step_function(model, batch, training)
-            scaled_loss = loss / accumulation_steps
+            group_start = (batch_index // accumulation_steps) * accumulation_steps
+            group_size = min(accumulation_steps, num_batches - group_start)
+            scaled_loss = loss / group_size
 
         if not torch.isfinite(loss):
             raise FloatingPointError(f"检测到非有限 loss：{float(loss.detach().cpu())}")
@@ -159,7 +166,11 @@ def _run_epoch(
                 scaler.scale(scaled_loss).backward()
             else:
                 scaled_loss.backward()
-            should_step = (batch_index + 1) % accumulation_steps == 0 or (batch_index + 1) == len(loader)
+            processed_batches = batch_index + 1
+            should_step = (
+                processed_batches % accumulation_steps == 0
+                or processed_batches == num_batches
+            )
             if should_step:
                 if scaler is not None:
                     scaler.unscale_(optimizer)

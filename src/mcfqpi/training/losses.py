@@ -193,9 +193,12 @@ class InverseLoss(nn.Module):
         terms["residual"] = residual.abs().mean() if isinstance(residual, torch.Tensor) else prediction.new_zeros(())
 
         if forward_twin is not None and (self.weights.cycle_l1 > 0 or self.weights.cycle_spectral > 0):
+            if "speckle_clean" not in batch:
+                raise KeyError("启用 cycle loss 时 batch 必须包含 speckle_clean")
             reconstructed = forward_twin(prediction)["speckle"]
-            terms["cycle_l1"] = masked_l1(reconstructed, batch["speckle"], mask)
-            terms["cycle_spectral"] = spectral_l1(reconstructed, batch["speckle"])
+            cycle_target = batch["speckle_clean"]
+            terms["cycle_l1"] = masked_l1(reconstructed, cycle_target, mask)
+            terms["cycle_spectral"] = spectral_l1(reconstructed, cycle_target)
             outputs["reconstructed_speckle"] = reconstructed
         else:
             terms["cycle_l1"] = prediction.new_zeros(())

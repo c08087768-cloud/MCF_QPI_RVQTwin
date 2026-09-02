@@ -71,6 +71,7 @@ class MCFManifestDataset(Dataset[dict[str, Any]]):
             method=self.speckle_normalization,  # type: ignore[arg-type]
             dynamic_range=self.dynamic_range,
         )
+        speckle_clean = speckle.clone()
         if self.augment is not None:
             speckle = self.augment(speckle)
         phase_rad = decode_phase(phase_array, self.phase_encoding)
@@ -79,6 +80,7 @@ class MCFManifestDataset(Dataset[dict[str, Any]]):
         valid_mask = speckle_mask * phase_mask
         return {
             "speckle": speckle.contiguous(),
+            "speckle_clean": speckle_clean.contiguous(),
             "phase": phase.contiguous(),
             "phase_rad": phase_rad.contiguous(),
             "valid_mask": valid_mask.contiguous(),
@@ -135,6 +137,7 @@ class MCFH5Dataset(Dataset[dict[str, Any]]):
         file = self._ensure_open()
         row = int(self.indices[index])
         speckle = torch.from_numpy(np.asarray(file["speckle"][row], dtype=np.float32))
+        speckle_clean = speckle.clone()
         if self.augment is not None:
             speckle = self.augment(speckle)
         phase = torch.from_numpy(np.asarray(file["phase"][row], dtype=np.float32))
@@ -142,6 +145,7 @@ class MCFH5Dataset(Dataset[dict[str, Any]]):
         decode = lambda key: file[key][row].decode("utf-8") if isinstance(file[key][row], bytes) else str(file[key][row])
         return {
             "speckle": speckle,
+            "speckle_clean": speckle_clean,
             "phase": phase,
             "phase_rad": phase * np.pi,
             "valid_mask": mask,
