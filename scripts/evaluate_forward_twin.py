@@ -79,6 +79,10 @@ def main() -> None:
     summary = {
         "split": args.split,
         "overall": summarize_frame(frame, bootstrap_samples=1000),
+        "by_domain": {
+            str(domain): summarize_frame(group, bootstrap_samples=1000)
+            for domain, group in frame.groupby("domain")
+        },
         "recommendation": (
             "只有当验证集 speckle Pearson/PSNR 稳定、且 cycle-loss 消融确实提升逆问题测试指标时，"
             "才在主模型中启用经验闭环；否则将 cycle 权重设为 0。"

@@ -17,7 +17,7 @@ python scripts/train_forward_twin.py --config configs/smoke/forward_twin.yaml
 python scripts/train_inverse.py --config configs/smoke/baseline.yaml
 python scripts/train_inverse.py --config configs/smoke/proposed.yaml
 python scripts/evaluate.py --config configs/smoke/proposed.yaml \
-  --checkpoint outputs/smoke/proposed/best.pt \
+  --checkpoint outputs/smoke/proposed/best.inference.pt \
   --set output_dir=outputs/smoke/eval_proposed
 python scripts/train_diffusion.py --config configs/smoke/diffusion.yaml
 python scripts/evaluate_diffusion.py --config configs/smoke/diffusion.yaml \

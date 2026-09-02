@@ -158,7 +158,7 @@ def build_reproducibility_metadata(full_config: dict[str, Any]) -> dict[str, Any
         "environment": {
             "python": sys.version,
             "platform": platform.platform(),
-            "torch": torch.__version__,
+            "torch": str(torch.__version__),
             "cuda_runtime": torch.version.cuda,
             "cudnn": torch.backends.cudnn.version(),
             "cuda_device_count": torch.cuda.device_count(),
