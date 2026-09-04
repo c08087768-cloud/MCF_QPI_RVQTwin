@@ -17,6 +17,7 @@ env/
 
 # --- 测试与工具缓存 ---
 .pytest_cache/
+.worktrees/
 .ruff_cache/
 .mypy_cache/
 .coverage
