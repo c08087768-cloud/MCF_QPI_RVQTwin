@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from collections import defaultdict
 from pathlib import Path
 
@@ -19,18 +20,33 @@ from mcfqpi.training.engine import build_loader, move_batch_to_device
 from mcfqpi.utils import select_device
 
 
+def apply_residual_scale(model: DualDomainRVQTwin, residual_scale: float) -> None:
+    """覆盖连续旁路强度，不重新加载或修改 checkpoint 权重。"""
+    if not math.isfinite(residual_scale) or residual_scale < 0.0:
+        raise ValueError("residual_scale 必须是有限的非负数")
+    model.residual_scale = float(residual_scale)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="RVQ 占用、旁路比例和 token 干预诊断")
     parser.add_argument("--config", required=True)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--max-batches", type=int, default=0)
+    parser.add_argument(
+        "--residual-scale",
+        type=float,
+        default=None,
+        help="仅在评估时覆盖连续残差尺度；不修改 checkpoint。",
+    )
     args = parser.parse_args()
     config = load_config(args.config)
     device = select_device(str(config.get("device", "auto")))
     model, _ = build_inverse_from_checkpoint(args.checkpoint, map_location="cpu")
     if not isinstance(model, DualDomainRVQTwin):
         raise TypeError("该诊断只适用于 DualDomainRVQTwin")
+    if args.residual_scale is not None:
+        apply_residual_scale(model, args.residual_scale)
     model.to(device).eval()
     dataset = build_dataset(config["data"], "val", training=False)
     loader = build_loader(dataset, config.get("loader", {}), training=False)
@@ -69,6 +85,7 @@ def main() -> None:
     baseline = float(np.mean(errors["none"]))
     report = {
         "split": "val",
+        "residual_scale": model.residual_scale,
         "mae_rad": {key: float(np.mean(value)) for key, value in errors.items()},
         "relative_mae_change": {
             key: float(np.mean(value) / baseline - 1.0) for key, value in errors.items()
