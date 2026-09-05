@@ -115,12 +115,24 @@ def token_cross_entropy(
     logits: list[torch.Tensor] | tuple[torch.Tensor, ...],
     target_indices: torch.Tensor,
 ) -> torch.Tensor:
-    """Residual VQ 每一级码本的 token 交叉熵。"""
+    """Residual VQ 每一级码本的确定性 token 交叉熵。"""
     if target_indices.ndim != 4:
         raise ValueError(f"target_indices 应为 [B,Q,H,W]，得到 {tuple(target_indices.shape)}")
     if len(logits) != target_indices.shape[1]:
         raise ValueError("预测码本级数与 target token 级数不一致")
-    losses = [F.cross_entropy(stage_logits, target_indices[:, stage]) for stage, stage_logits in enumerate(logits)]
+    losses = []
+    for stage, stage_logits in enumerate(logits):
+        # CUDA 的二维 nll_loss 在 strict deterministic 模式下不可用。
+        # log_softmax + gather 与无权重、无 ignore_index 的 cross entropy 等价，
+        # 且不会进入 nll_loss2d 的非确定性实现。
+        compute_dtype = (
+            torch.float32
+            if stage_logits.dtype in {torch.float16, torch.bfloat16}
+            else stage_logits.dtype
+        )
+        log_probabilities = F.log_softmax(stage_logits, dim=1, dtype=compute_dtype)
+        target = target_indices[:, stage].unsqueeze(1)
+        losses.append(-log_probabilities.gather(1, target).mean())
     return torch.stack(losses).mean()
 
 
