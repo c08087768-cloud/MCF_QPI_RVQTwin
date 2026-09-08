@@ -27,6 +27,17 @@ def apply_residual_scale(model: DualDomainRVQTwin, residual_scale: float) -> Non
     model.residual_scale = float(residual_scale)
 
 
+def collect_code_indices(
+    indices: torch.Tensor, *, num_quantizers: int
+) -> list[torch.Tensor]:
+    """按 RVQ 级别拆分 [B,Q,H,W] 的 token 索引。"""
+    if indices.ndim != 4 or indices.shape[1] != num_quantizers:
+        raise ValueError(
+            f"indices 应为 [B,{num_quantizers},H,W]，实际 {tuple(indices.shape)}"
+        )
+    return [indices[:, level] for level in range(num_quantizers)]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="RVQ 占用、旁路比例和 token 干预诊断")
     parser.add_argument("--config", required=True)
@@ -69,8 +80,15 @@ def main() -> None:
                         (output["continuous_residual"].flatten(1).norm(dim=1)
                          / output["z_q"].flatten(1).norm(dim=1).clamp_min(1e-12)).cpu().tolist()
                     )
-                    for level, indices in enumerate(output["indices"]):
-                        code_indices[level].append(indices.detach().cpu().numpy())
+                    indices = output["indices"]
+                    assert isinstance(indices, torch.Tensor)
+                    for level, stage_indices in enumerate(
+                        collect_code_indices(
+                            indices,
+                            num_quantizers=model.phase_prior.quantizer.num_quantizers,
+                        )
+                    ):
+                        code_indices[level].append(stage_indices.detach().cpu().numpy())
     occupancy = []
     for level, chunks in enumerate(code_indices):
         values = np.concatenate(chunks).reshape(-1)

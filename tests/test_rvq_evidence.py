@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import pytest
+import torch
 
 from mcfqpi.models import DualDomainRVQTwin, PhaseRVQVAE
-from scripts.evaluate_rvq_evidence import apply_residual_scale
+from scripts.evaluate_rvq_evidence import apply_residual_scale, collect_code_indices
 
 
 def _model() -> DualDomainRVQTwin:
@@ -31,3 +32,18 @@ def test_apply_residual_scale_overrides_model_without_reloading_weights() -> Non
 def test_apply_residual_scale_rejects_negative_value() -> None:
     with pytest.raises(ValueError, match="非负"):
         apply_residual_scale(_model(), -0.01)
+
+
+def test_collect_code_indices_groups_bqhw_tensor_by_quantizer_level() -> None:
+    indices = torch.tensor(
+        [
+            [[[0, 1]], [[4, 5]]],
+            [[[2, 3]], [[6, 7]]],
+        ]
+    )
+
+    result = collect_code_indices(indices, num_quantizers=2)
+
+    assert len(result) == 2
+    assert result[0].tolist() == [[[0, 1]], [[2, 3]]]
+    assert result[1].tolist() == [[[4, 5]], [[6, 7]]]
