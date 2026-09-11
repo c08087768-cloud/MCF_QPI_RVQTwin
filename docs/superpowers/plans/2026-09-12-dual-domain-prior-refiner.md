@@ -242,12 +242,13 @@ Run `git add src/mcfqpi/training/losses.py scripts/train_inverse.py tests/test_t
 
 **Files:**
 - Create: `configs/research/dual_prior_continuous_refiner.yaml`
+- Create: `configs/research/phase_rvqvae_rvq1.yaml`
 - Create: `configs/research/dual_prior_rvq1_refiner.yaml`
 - Create: `configs/research/dual_prior_rvq2_refiner.yaml`
 - Modify: `tests/test_research_protocol_configs.py`
 
 **Interfaces:**
-- Produces three official-HDF5 seed42 development configs. Only quantization and RVQ-level count may differ between them.
+- Produces an official-HDF5 seed42 one-level phase-prior configuration plus three refiner configurations. Only quantization and RVQ-level count may differ between refiner configurations.
 
 - [ ] **Step 1: Write a failing protocol test**
 
@@ -268,6 +269,9 @@ def test_prior_refiner_seed42_configs_are_fair_and_cycle_off() -> None:
     assert configs[0]["model"]["use_quantization"] is False
     assert configs[1]["model"]["phase_prior_model"]["num_quantizers"] == 1
     assert configs[2]["model"]["phase_prior_model"]["num_quantizers"] == 2
+    q1_prior = load_yaml(ROOT / "configs/research/phase_rvqvae_rvq1.yaml")
+    assert q1_prior["model"]["num_quantizers"] == 1
+    assert configs[1]["model"]["phase_prior_checkpoint"] == q1_prior["output_dir"] + "/best.pt"
 ```
 
 - [ ] **Step 2: Verify RED**
@@ -278,7 +282,9 @@ Expected: `FileNotFoundError` for the first new YAML file.
 
 - [ ] **Step 3: Add immutable, fair configurations**
 
-Copy the corrected proposed protocol values to every new YAML: official v2 HDF5, augmentation, loader, phase-prior dimensions, loss weights, training schedule, and evaluation fields. Set model type `dual_domain_prior_refiner`, `detail_scale_max: 0.25`, `detail_scale_init: 0.05`, and unique `outputs/research_corrected/official/..._seed42` output paths.
+Create `phase_rvqvae_rvq1.yaml` from the corrected phase-prior protocol: official v2 HDF5, no augmentation, 60 epochs, `num_quantizers: 1`, and output directory `outputs/research_corrected/official/phase_rvqvae_rvq1_seed42`. Its `best.pt` is the only permitted `phase_prior_checkpoint` in the RVQ1 refiner YAML.
+
+Copy the corrected proposed protocol values to every refiner YAML: official v2 HDF5, augmentation, loader, phase-prior dimensions, loss weights, training schedule, and evaluation fields. Set model type `dual_domain_prior_refiner`, `detail_scale_max: 0.25`, `detail_scale_init: 0.05`, and unique `outputs/research_corrected/official/..._seed42` output paths.
 
 Set continuous to `use_quantization: false`, `loss.vq: 0.0`, and `loss.token: 0.0`. Set RVQ1/RVQ2 to quantization true and phase-prior `num_quantizers` one/two with existing VQ and token weights. All cycle fields remain zero.
 
@@ -290,7 +296,7 @@ Expected: all selected tests pass.
 
 - [ ] **Step 5: Commit**
 
-Run `git add configs/research/dual_prior_continuous_refiner.yaml configs/research/dual_prior_rvq1_refiner.yaml configs/research/dual_prior_rvq2_refiner.yaml tests/test_research_protocol_configs.py` followed by `git commit -m "feat: add fair prior-refiner development configs"`.
+Run `git add configs/research/phase_rvqvae_rvq1.yaml configs/research/dual_prior_continuous_refiner.yaml configs/research/dual_prior_rvq1_refiner.yaml configs/research/dual_prior_rvq2_refiner.yaml tests/test_research_protocol_configs.py` followed by `git commit -m "feat: add fair prior-refiner development configs"`.
 
 ### Task 5: Document run order and prove end-to-end local safety
 
@@ -299,7 +305,7 @@ Run `git add configs/research/dual_prior_continuous_refiner.yaml configs/researc
 - Modify: `tests/test_research_protocol_configs.py`
 
 **Interfaces:**
-- Produces instructions for seed42 validation-only order: controlled ResUNet-32, dual continuous, dual-prior continuous, RVQ1 refiner, RVQ2 refiner.
+- Produces instructions for seed42 validation-only order: controlled ResUNet-32, dual continuous, dual-prior continuous, RVQ2 refiner, then one-level phase-prior training followed by RVQ1 refiner.
 
 - [ ] **Step 1: Write a failing manual-presence test**
 

@@ -41,3 +41,27 @@ def test_clean_cycle_config_changes_only_cycle_fields_and_output() -> None:
             "outputs/research_corrected/proposed_clean_cycle_seed42",
         ),
     }
+
+
+def test_prior_refiner_seed42_configs_are_fair_and_cycle_off() -> None:
+    names = [
+        "dual_prior_continuous_refiner.yaml",
+        "dual_prior_rvq1_refiner.yaml",
+        "dual_prior_rvq2_refiner.yaml",
+    ]
+    configs = [load_yaml(ROOT / "configs/research" / name) for name in names]
+    for config in configs:
+        assert config["seed"] == 42
+        assert config["data"]["hdf5"] == "data/processed/official/mcf_qpi_128_v2.h5"
+        assert config["forward_twin"]["enabled"] is False
+        assert config["loss"]["cycle_l1"] == 0.0
+        assert config["loss"]["cycle_spectral"] == 0.0
+        assert config["training"]["epochs"] == 80
+        assert config["training"]["checkpoint_monitor"] == "val_phase_l1"
+        assert config["model"]["type"] == "dual_domain_prior_refiner"
+
+    assert configs[0]["model"]["use_quantization"] is False
+    assert configs[1]["model"]["use_quantization"] is True
+    assert configs[2]["model"]["use_quantization"] is True
+    assert configs[1]["model"]["phase_prior_model"]["num_quantizers"] == 1
+    assert configs[2]["model"]["phase_prior_model"]["num_quantizers"] == 2

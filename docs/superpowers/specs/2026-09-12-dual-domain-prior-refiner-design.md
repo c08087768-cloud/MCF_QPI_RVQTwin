@@ -57,7 +57,7 @@ phase = phase_prior + alpha * delta_phase
 | `dual_prior_rvq1_refiner` | 是 | 是 | 是 | 一级 | 是 |
 | `dual_prior_rvq2_refiner` | 是 | 是 | 是 | 两级 | 是 |
 
-`dual_prior_continuous` 与 RVQ 配置应共享编码器、融合器、细节解码器、损失权重和参数量级；唯一因果变量是是否经过量化器。一级和两级 RVQ 同样只改变 `num_quantizers`。若关键模型相对受控 ResUNet 或其连续对照在 seed42 的 validation MAE 改善达到或超过 2%，才补跑 seed123 与 seed2026；否则报告 seed42 诊断结果并停止扩大训练。
+`dual_prior_continuous` 与 RVQ 配置应共享编码器、融合器、细节解码器、损失权重和参数量级；唯一因果变量是是否经过量化器。一级和两级 RVQ 同样只改变 `num_quantizers`。一级 refiner 必须先训练匹配的 `phase_rvqvae_rvq1_seed42`，并只加载该一级 phase prior；不能加载现有两级 phase prior。若关键模型相对受控 ResUNet 或其连续对照在 seed42 的 validation MAE 改善达到或超过 2%，才补跑 seed123 与 seed2026；否则报告 seed42 诊断结果并停止扩大训练。
 
 ## 错误处理与门禁
 
@@ -79,4 +79,3 @@ phase = phase_prior + alpha * delta_phase
 ## 验收标准
 
 代码合入前必须通过全量 Python 测试。服务器运行前必须完成一次 GPU/AMP smoke，确认新模型能从 official HDF5 读取、训练一个有限 batch、保存自包含 checkpoint，并从该 checkpoint 完成 validation 评估。
-
