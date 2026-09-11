@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import pytest
 import torch
 
 from mcfqpi.models import (
     ConditionalDenoiser,
     DiffusionPhaseReconstructor,
+    DualDomainPriorRefiner,
     DualDomainRVQTwin,
     EmpiricalForwardTwin,
     GaussianDiffusion,
@@ -107,3 +109,38 @@ def test_rvq_token_interventions_change_discrete_latent() -> None:
     replaced = model(speckle, token_intervention="mean")
     assert not torch.equal(plain["z_q"], shuffled["z_q"])
     assert replaced["z_q"].std(dim=(-2, -1)).max() == 0
+
+
+def test_prior_refiner_composes_prior_and_detail_exactly() -> None:
+    model = DualDomainPriorRefiner(
+        _prior(),
+        base_channels=8,
+        dropout=0.0,
+        detail_scale_max=0.25,
+        detail_scale_init=0.05,
+    )
+    phase = torch.rand(2, 1, 64, 64)
+    output = model(torch.rand(2, 1, 64, 64), target_phase=phase)
+    assert output["phase"].shape == phase.shape
+    assert output["phase_prior"].shape == phase.shape
+    assert output["detail_phase"].shape == phase.shape
+    assert output["log_scale"].shape == phase.shape
+    assert torch.allclose(
+        output["phase"],
+        output["phase_prior"] + output["detail_scale"] * output["detail_phase"],
+    )
+    assert 0.0 < float(output["detail_scale"].detach()) < 0.25
+    assert output["target_indices"].shape == (2, 2, 8, 8)
+
+
+def test_prior_refiner_continuous_mode_has_no_token_targets() -> None:
+    model = DualDomainPriorRefiner(_prior(), base_channels=8, dropout=0.0, use_quantization=False)
+    output = model(torch.rand(2, 1, 64, 64), target_phase=torch.rand(2, 1, 64, 64))
+    assert "token_logits" not in output
+    assert "target_indices" not in output
+    assert float(output["vq_loss"]) == 0.0
+
+
+def test_prior_refiner_rejects_nonpositive_detail_scale_max() -> None:
+    with pytest.raises(ValueError, match="detail_scale_max"):
+        DualDomainPriorRefiner(_prior(), base_channels=8, detail_scale_max=0.0)
