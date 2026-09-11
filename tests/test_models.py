@@ -7,6 +7,7 @@ from mcfqpi.models import (
     ConditionalDenoiser,
     DiffusionPhaseReconstructor,
     DualDomainPriorRefiner,
+    DualDomainResUNet,
     DualDomainRVQTwin,
     EmpiricalForwardTwin,
     GaussianDiffusion,
@@ -144,3 +145,13 @@ def test_prior_refiner_continuous_mode_has_no_token_targets() -> None:
 def test_prior_refiner_rejects_nonpositive_detail_scale_max() -> None:
     with pytest.raises(ValueError, match="detail_scale_max"):
         DualDomainPriorRefiner(_prior(), base_channels=8, detail_scale_max=0.0)
+
+
+def test_dual_domain_resunet_has_no_phase_prior_contract() -> None:
+    model = DualDomainResUNet(base_channels=8, dropout=0.0)
+    output = model(torch.rand(2, 1, 64, 64))
+    assert output["phase"].shape == (2, 1, 64, 64)
+    assert output["log_scale"].shape == (2, 1, 64, 64)
+    assert "z_q" not in output
+    assert "phase_prior" not in output
+    assert "token_logits" not in output

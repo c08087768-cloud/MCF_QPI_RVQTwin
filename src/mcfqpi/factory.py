@@ -10,6 +10,7 @@ from .models import (
     ConditionalDenoiser,
     DiffusionPhaseReconstructor,
     DualDomainPriorRefiner,
+    DualDomainResUNet,
     DualDomainRVQTwin,
     EmpiricalForwardTwin,
     GaussianDiffusion,
@@ -120,6 +121,13 @@ def build_inverse_architecture(config: dict[str, Any]) -> nn.Module:
             base_channels=int(config.get("base_channels", 32)),
             dropout=float(config.get("dropout", 0.10)),
             predict_uncertainty=bool(config.get("predict_uncertainty", True)),
+        )
+    if model_type in {"dual_domain_resunet", "dual_resunet"}:
+        return DualDomainResUNet(
+            base_channels=int(config.get("base_channels", 24)),
+            dropout=float(config.get("dropout", 0.10)),
+            use_spatial=bool(config.get("use_spatial", True)),
+            use_frequency=bool(config.get("use_frequency", True)),
         )
     if model_type in {"dual_domain_rvq_twin", "rvqtwin", "proposed"}:
         prior = build_phase_prior(config.get("phase_prior_model", {}))

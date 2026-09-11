@@ -47,17 +47,17 @@ phase = phase_prior + alpha * delta_phase
 
 ## 对照实验
 
-所有开发实验使用同一份 official HDF5、相同数字输入扰动、batch=32、80 epochs、AdamW、cosine scheduler、`val_phase_l1` 选模规则与 seed42。开发阶段仅访问 validation，不能因 validation 结果反复修改后访问 test。
+所有开发实验使用同一份 official HDF5、`controlled_resunet32.yaml` 中的 baseline 强度数字输入扰动、batch=32、80 epochs、AdamW、cosine scheduler、`val_phase_l1` 选模规则与 seed42。开发阶段仅访问 validation，不能因 validation 结果反复修改后访问 test。
 
 | 配置 | 空间域 | 频域 | phase prior decoder | RVQ | 多尺度细节支路 |
 | --- | --- | --- | --- | --- | --- |
 | `controlled_resunet32` | 是 | 否 | 否 | 否 | ResUNet 主支路 |
-| `dual_continuous` | 是 | 是 | 否 | 否 | 否 |
+| `dual_domain_resunet` | 是 | 是 | 否 | 否 | ResUNet 主支路 |
 | `dual_prior_continuous` | 是 | 是 | 是 | 否 | 是 |
 | `dual_prior_rvq1_refiner` | 是 | 是 | 是 | 一级 | 是 |
 | `dual_prior_rvq2_refiner` | 是 | 是 | 是 | 两级 | 是 |
 
-`dual_prior_continuous` 与 RVQ 配置应共享编码器、融合器、细节解码器、损失权重和参数量级；唯一因果变量是是否经过量化器。一级和两级 RVQ 同样只改变 `num_quantizers`。一级 refiner 必须先训练匹配的 `phase_rvqvae_rvq1_seed42`，并只加载该一级 phase prior；不能加载现有两级 phase prior。若关键模型相对受控 ResUNet 或其连续对照在 seed42 的 validation MAE 改善达到或超过 2%，才补跑 seed123 与 seed2026；否则报告 seed42 诊断结果并停止扩大训练。
+`dual_domain_resunet` 复用与 refiner 相同的双域金字塔、门控融合和多尺度解码器，但直接输出相位，不构建或读取 phase prior。它的 `base_channels=21`，可训练参数约 6.32M，与 controlled ResUNet-32 的约 6.26M 接近。`dual_prior_continuous` 与 RVQ 配置使用 `base_channels=14`，可训练参数约 3.56M，与旧 proposed 的约 3.36M 接近；三者共享编码器、融合器、细节解码器、损失权重和参数量级，唯一因果变量是是否经过量化器。一级和两级 RVQ 同样只改变 `num_quantizers`。一级 refiner 必须先训练匹配的 `phase_rvqvae_rvq1_seed42`，并只加载该一级 phase prior；不能加载现有两级 phase prior。若关键模型相对受控 ResUNet 或其连续对照在 seed42 的 validation MAE 改善达到或超过 2%，才补跑 seed123 与 seed2026；否则报告 seed42 诊断结果并停止扩大训练。
 
 ## 错误处理与门禁
 

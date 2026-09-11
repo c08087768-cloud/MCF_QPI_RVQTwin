@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Do not alter `DualDomainRVQTwin`, its output semantics, or an existing configuration file.
-- New development runs are official HDF5 v2, cycle-off, batch 32, 80 epochs, AdamW at `1.5e-4` with `1e-4` weight decay, cosine minimum LR `1e-6`, and `val_phase_l1` selection.
+- New development runs are official HDF5 v2, cycle-off, the existing `controlled_resunet32.yaml` baseline-strength augmentation, batch 32, 80 epochs, AdamW at `1.5e-4` with `1e-4` weight decay, cosine minimum LR `1e-6`, and `val_phase_l1` selection.
 - `detail_scale_max` is finite and positive; output `detail_scale` remains in `(0, detail_scale_max)`.
 - `phase_prior_checkpoint` remains compulsory for a training model; inference must load only a self-contained checkpoint.
 - On this Windows host pytest must add `--basetemp .pytest-tmp` because the default temporary directory is unavailable to Conda.
@@ -166,6 +166,58 @@ Expected: all selected tests pass.
 
 Run `git add src/mcfqpi/factory.py tests/test_checkpoint_contract.py` followed by `git commit -m "feat: register prior refiner architecture"`.
 
+### Task 2b: Add a dual-domain ResUNet baseline without phase prior
+
+**Files:**
+- Create: `src/mcfqpi/models/dual_domain_resunet.py`
+- Modify: `src/mcfqpi/models/__init__.py`
+- Modify: `src/mcfqpi/factory.py`
+- Modify: `tests/test_models.py`
+- Modify: `tests/test_checkpoint_contract.py`
+
+**Interfaces:**
+- Consumes `PyramidEncoder` and `GatedScaleFusion` from Task 1.
+- Produces `DualDomainResUNet(base_channels=21, dropout=0.10, use_spatial=True, use_frequency=True)` and `model.type: dual_domain_resunet`.
+- Its `forward(speckle, **_)` returns exactly `phase`, `log_scale`, `spatial_latent`, `frequency_latent`, and `fusion_gate`; it never returns VQ, token, latent-target, or phase-prior fields.
+
+- [ ] **Step 1: Write failing baseline-contract tests**
+
+Add these tests:
+
+```python
+def test_dual_domain_resunet_has_no_phase_prior_contract() -> None:
+    model = DualDomainResUNet(base_channels=8, dropout=0.0)
+    output = model(torch.rand(2, 1, 64, 64))
+    assert output["phase"].shape == (2, 1, 64, 64)
+    assert output["log_scale"].shape == (2, 1, 64, 64)
+    assert "z_q" not in output
+    assert "phase_prior" not in output
+    assert "token_logits" not in output
+
+
+def test_dual_domain_resunet_factory_checkpoint_is_self_contained(tmp_path: Path) -> None:
+    config = {"type": "dual_domain_resunet", "base_channels": 8, "dropout": 0.0}
+    model = build_inverse_architecture(config)
+    path = tmp_path / "dual.inference.pt"
+    save_inference_checkpoint(model, path, model_config=config, metadata={})
+    loaded, _ = build_inverse_from_checkpoint(path)
+    assert loaded(torch.rand(1, 1, 32, 32))["phase"].shape == (1, 1, 32, 32)
+```
+
+- [ ] **Step 2: Verify RED**
+
+Run `conda run --no-capture-output -n mcf-qpi python -m pytest tests/test_models.py tests/test_checkpoint_contract.py -q --basetemp .pytest-tmp`.
+
+Expected: imports fail because `DualDomainResUNet` does not exist.
+
+- [ ] **Step 3: Implement and register the baseline**
+
+Create the baseline from Task 1's pyramid encoders, four same-scale fusions, three `UpBlock` layers, one residual refinement block, a sigmoid phase head, and a clamped uncertainty head. The factory branch is `dual_domain_resunet` or `dual_resunet` and must not require `phase_prior_checkpoint`.
+
+- [ ] **Step 4: Verify GREEN and commit**
+
+Run `conda run --no-capture-output -n mcf-qpi python -m pytest tests/test_models.py tests/test_checkpoint_contract.py -q --basetemp .pytest-tmp`, then commit the five changed files with message `feat: add dual-domain resunet baseline`.
+
 ### Task 3: Log raw, weighted, and refiner-specific diagnostics
 
 **Files:**
@@ -242,6 +294,7 @@ Run `git add src/mcfqpi/training/losses.py scripts/train_inverse.py tests/test_t
 
 **Files:**
 - Create: `configs/research/dual_prior_continuous_refiner.yaml`
+- Create: `configs/research/dual_domain_resunet.yaml`
 - Create: `configs/research/phase_rvqvae_rvq1.yaml`
 - Create: `configs/research/dual_prior_rvq1_refiner.yaml`
 - Create: `configs/research/dual_prior_rvq2_refiner.yaml`
@@ -282,7 +335,7 @@ Expected: `FileNotFoundError` for the first new YAML file.
 
 - [ ] **Step 3: Add immutable, fair configurations**
 
-Create `phase_rvqvae_rvq1.yaml` from the corrected phase-prior protocol: official v2 HDF5, no augmentation, 60 epochs, `num_quantizers: 1`, and output directory `outputs/research_corrected/official/phase_rvqvae_rvq1_seed42`. Its `best.pt` is the only permitted `phase_prior_checkpoint` in the RVQ1 refiner YAML.
+Create `dual_domain_resunet.yaml` from the corrected ResUNet protocol with `model.type: dual_domain_resunet`, `base_channels: 21`, and no phase-prior fields. Set every refiner configuration to `base_channels: 14`, matching the old proposed parameter scale. Create `phase_rvqvae_rvq1.yaml` from the corrected phase-prior protocol: official v2 HDF5, no augmentation, 60 epochs, `num_quantizers: 1`, and output directory `outputs/research_corrected/official/phase_rvqvae_rvq1_seed42`. Its `best.pt` is the only permitted `phase_prior_checkpoint` in the RVQ1 refiner YAML.
 
 Copy the corrected proposed protocol values to every refiner YAML: official v2 HDF5, augmentation, loader, phase-prior dimensions, loss weights, training schedule, and evaluation fields. Set model type `dual_domain_prior_refiner`, `detail_scale_max: 0.25`, `detail_scale_init: 0.05`, and unique `outputs/research_corrected/official/..._seed42` output paths.
 
@@ -336,7 +389,9 @@ Run:
 
 ```powershell
 conda run --no-capture-output -n mcf-qpi python -m pytest -q --basetemp .pytest-tmp
-conda run --no-capture-output -n mcf-qpi python scripts/train_inverse.py --config configs/research/dual_prior_rvq2_refiner.yaml --set device=cpu --set data.hdf5=data/smoke/mcf_smoke_64.h5 --set output_dir=outputs/smoke/prior_refiner_cpu --set training.epochs=1 --set training.max_train_batches=2 --set training.max_val_batches=1 --set loader.num_workers=0 --set loader.persistent_workers=false
+conda run --no-capture-output -n mcf-qpi python scripts/cache_to_hdf5.py data/smoke/manifest.csv --output data/smoke/mcf_smoke_64_v2.h5 --size 64 --phase-encoding uint8 --resize-mode fit_pad --normalization log_mean --dynamic-range 20 --compression lzf --report outputs/smoke/prior_refiner_hdf5_report.json
+conda run --no-capture-output -n mcf-qpi python scripts/train_phase_rvqvae.py --config configs/smoke/phase_rvqvae.yaml --set device=cpu --set data.hdf5=data/smoke/mcf_smoke_64_v2.h5 --set output_dir=outputs/smoke/prior_refiner_cpu_phase
+conda run --no-capture-output -n mcf-qpi python scripts/train_inverse.py --config configs/research/dual_prior_rvq2_refiner.yaml --set device=cpu --set data.hdf5=data/smoke/mcf_smoke_64_v2.h5 --set data.size=64 --set output_dir=outputs/smoke/prior_refiner_cpu --set model.phase_prior_checkpoint=outputs/smoke/prior_refiner_cpu_phase/best.pt --set model.phase_prior_model.latent_channels=16 --set model.phase_prior_model.base_channels=8 --set model.phase_prior_model.codebook_size=32 --set model.phase_prior_model.num_quantizers=2 --set model.phase_prior_model.dropout=0.0 --set model.base_channels=8 --set model.dropout=0.0 --set loader.batch_size=8 --set loader.num_workers=0 --set loader.persistent_workers=false --set loader.drop_last=false --set training.epochs=1 --set training.max_train_batches=2 --set training.max_val_batches=1 --set training.early_stopping_patience=0
 ```
 
 Expected: full tests pass and the smoke output directory contains `best.inference.pt` and `training_summary.json`.

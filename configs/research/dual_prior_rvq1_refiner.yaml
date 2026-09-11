@@ -15,14 +15,14 @@ data:
   size: 128
   augmentation:
     enabled: true
-    gain: 0.15
-    background: 0.03
-    gaussian_noise: 0.015
+    gain: 0.10
+    background: 0.02
+    gaussian_noise: 0.01
     poisson_peak: 0.0
-    blur_probability: 0.15
+    blur_probability: 0.10
     max_shift_pixels: 1
-    saturation_probability: 0.08
-    dead_pixel_probability: 0.0005
+    saturation_probability: 0.05
+    dead_pixel_probability: 0.0002
 
 loader:
   batch_size: 32
@@ -42,7 +42,7 @@ model:
     num_quantizers: 1
     commitment_beta: 0.25
     dropout: 0.05
-  base_channels: 32
+  base_channels: 14
   dropout: 0.10
   residual_scale: 0.15
   detail_scale_max: 0.25

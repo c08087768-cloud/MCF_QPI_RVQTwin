@@ -1,9 +1,9 @@
-# 官方 split、seed42：双域相位先验细节修正网络的连续潜变量对照。
+# 官方 split、seed42：只保留空间域 + Fourier 域门控融合的连续基线。
 seed: 42
 device: cuda
 reproducibility:
   mode: strict
-output_dir: outputs/research_corrected/official/dual_prior_continuous_refiner_seed42
+output_dir: outputs/research_corrected/official/dual_domain_resunet_seed42
 
 data:
   hdf5: data/processed/official/mcf_qpi_128_v2.h5
@@ -32,27 +32,11 @@ loader:
   drop_last: true
 
 model:
-  type: dual_domain_prior_refiner
-  phase_prior_checkpoint: outputs/research_corrected/official/phase_rvqvae_seed42/best.pt
-  phase_prior_model:
-    latent_channels: 64
-    base_channels: 32
-    downsample_stages: 3
-    codebook_size: 256
-    num_quantizers: 2
-    commitment_beta: 0.25
-    dropout: 0.05
-  base_channels: 14
+  type: dual_domain_resunet
+  base_channels: 21
   dropout: 0.10
-  residual_scale: 0.15
-  detail_scale_max: 0.25
-  detail_scale_init: 0.05
-  freeze_prior_encoder: true
-  freeze_codebook: true
-  freeze_decoder: false
   use_spatial: true
   use_frequency: true
-  use_quantization: false
 
 forward_twin:
   enabled: false
@@ -65,8 +49,8 @@ loss:
   pearson: 0.05
   vq: 0.0
   token: 0.0
-  latent: 0.10
-  residual: 0.01
+  latent: 0.0
+  residual: 0.0
   cycle_l1: 0.0
   cycle_spectral: 0.0
 

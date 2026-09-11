@@ -66,3 +66,13 @@ def test_refiner_inference_checkpoint_is_self_contained(tmp_path: Path) -> None:
     loaded, checkpoint = build_inverse_from_checkpoint(path)
     assert checkpoint["model_config"] == config
     assert loaded(torch.rand(1, 1, 32, 32))["phase"].shape == (1, 1, 32, 32)
+
+
+def test_dual_domain_resunet_checkpoint_is_self_contained(tmp_path: Path) -> None:
+    config = {"type": "dual_domain_resunet", "base_channels": 8, "dropout": 0.0}
+    model = build_inverse_architecture(config)
+    path = tmp_path / "dual.inference.pt"
+    save_inference_checkpoint(model, path, model_config=config, metadata={})
+
+    loaded, _ = build_inverse_from_checkpoint(path)
+    assert loaded(torch.rand(1, 1, 32, 32))["phase"].shape == (1, 1, 32, 32)
