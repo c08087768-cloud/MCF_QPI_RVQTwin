@@ -167,6 +167,27 @@ class InverseLoss(nn.Module):
         super().__init__()
         self.weights = weights
 
+    def weighted_terms(self, terms: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        """返回用于总损失的逐项加权贡献，保留原始项供训练诊断。"""
+        return {
+            f"weighted_{name}": getattr(self.weights, name) * value
+            for name, value in terms.items()
+        }
+
+    @staticmethod
+    def model_diagnostics(outputs: dict[str, Any]) -> dict[str, torch.Tensor]:
+        """记录仅适用于 prior-refiner 的细节支路强度。"""
+        detail_scale = outputs.get("detail_scale")
+        detail_phase = outputs.get("detail_phase")
+        phase_prior = outputs.get("phase_prior")
+        if not all(isinstance(value, torch.Tensor) for value in (detail_scale, detail_phase, phase_prior)):
+            return {}
+        return {
+            "detail_scale": detail_scale.detach(),
+            "mean_abs_detail_phase": detail_phase.detach().abs().mean(),
+            "mean_abs_phase_prior": phase_prior.detach().abs().mean(),
+        }
+
     def forward(
         self,
         outputs: dict[str, Any],
