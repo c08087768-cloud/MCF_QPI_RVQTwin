@@ -43,6 +43,14 @@ from ..utils import (
     worker_seed_init,
 )
 
+
+def load_resume_checkpoint(path: str | Path) -> dict[str, Any]:
+    """Load training state on CPU so RNG and DataLoader states remain valid."""
+    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    if not isinstance(checkpoint, dict):
+        raise TypeError("resume checkpoint 必须是包含训练状态的字典")
+    return checkpoint
+
 StepFunction = Callable[[nn.Module, dict[str, Any], bool], tuple[torch.Tensor, Mapping[str, torch.Tensor], dict[str, Any]]]
 
 
@@ -270,7 +278,7 @@ def fit_model(
     no_improvement = 0
     optimizer_updates = 0
     if resume_checkpoint:
-        checkpoint = torch.load(resume_checkpoint, map_location=device, weights_only=False)
+        checkpoint = load_resume_checkpoint(resume_checkpoint)
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         if scheduler is not None and checkpoint.get("scheduler") is not None:
