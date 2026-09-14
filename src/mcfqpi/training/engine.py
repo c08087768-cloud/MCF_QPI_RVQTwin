@@ -130,6 +130,23 @@ def _autocast_context(device: torch.device, enabled: bool, dtype_name: str = "fl
     return torch.autocast(device_type="cuda", dtype=dtype)
 
 
+def nonfinite_loss_message(
+    loss: torch.Tensor,
+    terms: Mapping[str, torch.Tensor],
+    *,
+    batch_index: int,
+) -> str:
+    """生成可定位到 batch 和损失项的数值异常信息。"""
+    values = {"loss": loss, **terms}
+    nonfinite = {
+        name: float(value.detach().float().cpu())
+        for name, value in values.items()
+        if not torch.isfinite(value).all()
+    }
+    detail = ", ".join(f"{name}={value}" for name, value in nonfinite.items())
+    return f"检测到非有限 loss：batch={batch_index}; {detail}"
+
+
 def _run_epoch(
     model: nn.Module,
     loader: DataLoader[Any],
@@ -168,7 +185,7 @@ def _run_epoch(
             scaled_loss = loss / group_size
 
         if not torch.isfinite(loss):
-            raise FloatingPointError(f"检测到非有限 loss：{float(loss.detach().cpu())}")
+            raise FloatingPointError(nonfinite_loss_message(loss, terms, batch_index=batch_index))
         if training:
             assert optimizer is not None
             if scaler is not None:
