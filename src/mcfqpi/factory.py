@@ -9,6 +9,8 @@ from torch import nn
 from .models import (
     ConditionalDenoiser,
     DiffusionPhaseReconstructor,
+    DualDomainPriorRefiner,
+    DualDomainResUNet,
     DualDomainRVQTwin,
     EmpiricalForwardTwin,
     GaussianDiffusion,
@@ -96,7 +98,7 @@ def build_diffusion_reconstructor(config: dict[str, Any]) -> DiffusionPhaseRecon
 
 def build_inverse_model(config: dict[str, Any], *, map_location: str | torch.device = "cpu") -> nn.Module:
     model = build_inverse_architecture(config)
-    if isinstance(model, DualDomainRVQTwin):
+    if isinstance(model, (DualDomainRVQTwin, DualDomainPriorRefiner)):
         checkpoint = config.get("phase_prior_checkpoint")
         if not checkpoint:
             raise ValueError("新训练主模型需要 model.phase_prior_checkpoint")
@@ -120,6 +122,13 @@ def build_inverse_architecture(config: dict[str, Any]) -> nn.Module:
             dropout=float(config.get("dropout", 0.10)),
             predict_uncertainty=bool(config.get("predict_uncertainty", True)),
         )
+    if model_type in {"dual_domain_resunet", "dual_resunet"}:
+        return DualDomainResUNet(
+            base_channels=int(config.get("base_channels", 24)),
+            dropout=float(config.get("dropout", 0.10)),
+            use_spatial=bool(config.get("use_spatial", True)),
+            use_frequency=bool(config.get("use_frequency", True)),
+        )
     if model_type in {"dual_domain_rvq_twin", "rvqtwin", "proposed"}:
         prior = build_phase_prior(config.get("phase_prior_model", {}))
         return DualDomainRVQTwin(
@@ -127,6 +136,22 @@ def build_inverse_architecture(config: dict[str, Any]) -> nn.Module:
             base_channels=int(config.get("base_channels", 32)),
             dropout=float(config.get("dropout", 0.10)),
             residual_scale=float(config.get("residual_scale", 0.15)),
+            freeze_prior_encoder=bool(config.get("freeze_prior_encoder", True)),
+            freeze_codebook=bool(config.get("freeze_codebook", True)),
+            freeze_decoder=bool(config.get("freeze_decoder", False)),
+            use_spatial=bool(config.get("use_spatial", True)),
+            use_frequency=bool(config.get("use_frequency", True)),
+            use_quantization=bool(config.get("use_quantization", True)),
+        )
+    if model_type in {"dual_domain_prior_refiner", "prior_refiner"}:
+        prior = build_phase_prior(config.get("phase_prior_model", {}))
+        return DualDomainPriorRefiner(
+            prior,
+            base_channels=int(config.get("base_channels", 32)),
+            dropout=float(config.get("dropout", 0.10)),
+            residual_scale=float(config.get("residual_scale", 0.15)),
+            detail_scale_max=float(config.get("detail_scale_max", 0.25)),
+            detail_scale_init=float(config.get("detail_scale_init", 0.05)),
             freeze_prior_encoder=bool(config.get("freeze_prior_encoder", True)),
             freeze_codebook=bool(config.get("freeze_codebook", True)),
             freeze_decoder=bool(config.get("freeze_decoder", False)),

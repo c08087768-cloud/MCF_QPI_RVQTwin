@@ -50,7 +50,12 @@ def main() -> None:
 
     def step(model, batch, training):
         outputs = model(batch["speckle"], target_phase=batch["phase"])
-        loss, terms = criterion(outputs, batch, forward_twin=forward_twin)
+        loss, raw_terms = criterion(outputs, batch, forward_twin=forward_twin)
+        terms = {
+            **raw_terms,
+            **criterion.weighted_terms(raw_terms),
+            **criterion.model_diagnostics(outputs),
+        }
         return loss, terms, outputs
 
     fit_model(
